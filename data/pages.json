@@ -1,0 +1,14 @@
+{
+  "privacy-policy": {
+    "title": "Privacy Policy",
+    "content": "<h1>Privacy Policy</h1><p>Your privacy is important to us...</p>"
+  },
+  "disclaimer": {
+    "title": "Disclaimer",
+    "content": "<h1>Disclaimer</h1><p>All lottery results are provided for informational purposes only...</p>"
+  },
+  "about-us": {
+    "title": "About Us",
+    "content": "<h1>About Our Website</h1><p>We provide the latest lottery results and analysis...</p>"
+  }
+}
