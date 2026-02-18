@@ -7,6 +7,9 @@ const { Pool } = pg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  max: 1, // Vercel is serverless/ephemeral, keep pool size low
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 10000,
   ssl: {
     rejectUnauthorized: false,
   },
