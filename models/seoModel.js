@@ -1,36 +1,22 @@
 import db from "../config/db.js";
 
-export const getAllMeta = () => {
-  return new Promise((resolve, reject) => {
-    db.query("SELECT * FROM seo_metadata", (err, results) => {
-      if (err) reject(err);
-      else resolve(results);
-    });
-  });
+export const getAllMeta = async () => {
+  const { rows } = await db.query("SELECT * FROM seo_settings");
+  return rows;
 };
 
-export const getMetaByPage = (page) => {
-  return new Promise((resolve, reject) => {
-    db.query(
-      "SELECT * FROM seo_metadata WHERE page_name = ?",
-      [page],
-      (err, results) => {
-        if (err) reject(err);
-        else resolve(results[0]);
-      }
-    );
-  });
+export const getMetaByPage = async (page) => {
+  const { rows } = await db.query(
+    "SELECT * FROM seo_settings WHERE page_name = $1",
+    [page]
+  );
+  return rows[0];
 };
 
-export const updateMeta = (page, title, description) => {
-  return new Promise((resolve, reject) => {
-    db.query(
-      "UPDATE seo_metadata SET meta_title = ?, meta_description = ? WHERE page_name = ?",
-      [title, description, page],
-      (err, result) => {
-        if (err) reject(err);
-        else resolve(result);
-      }
-    );
-  });
+export const updateMeta = async (page, title, description) => {
+  const { rowCount } = await db.query(
+    "UPDATE seo_settings SET meta_title = $1, meta_description = $2 WHERE page_name = $3",
+    [title, description, page]
+  );
+  return { affectedRows: rowCount };
 };

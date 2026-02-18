@@ -1,41 +1,23 @@
 import db from "../config/db.js";
 
-export const getAllFaqs = () => {
-  return new Promise((resolve, reject) => {
-    db.query("SELECT * FROM faqs ORDER BY id DESC", (err, results) => {
-      if (err) reject(err);
-      else resolve(results);
-    });
-  });
+export const getAllFaqs = async () => {
+  const { rows } = await db.query("SELECT * FROM faqs ORDER BY id DESC");
+  return rows;
 };
 
-export const getFaqById = (id) => {
-  return new Promise((resolve, reject) => {
-    db.query("SELECT * FROM faqs WHERE id = ?", [id], (err, results) => {
-      if (err) reject(err);
-      else resolve(results[0]);
-    });
-  });
+export const getFaqById = async (id) => {
+  const { rows } = await db.query("SELECT * FROM faqs WHERE id = $1", [id]);
+  return rows[0];
 };
 
-export const createFaq = (question, answer) => {
-  return new Promise((resolve, reject) => {
-    db.query(
-      "INSERT INTO faqs (question, answer) VALUES (?, ?)",
-      [question, answer],
-      (err, result) => {
-        if (err) reject(err);
-        else resolve({ id: result.insertId });
-      }
-    );
-  });
+export const createFaq = async (question, answer) => {
+  const { rows } = await db.query(
+    "INSERT INTO faqs (question, answer) VALUES ($1, $2) RETURNING id",
+    [question, answer]
+  );
+  return { id: rows[0].id };
 };
 
-export const deleteFaq = (id) => {
-  return new Promise((resolve, reject) => {
-    db.query("DELETE FROM faqs WHERE id = ?", [id], (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
+export const deleteFaq = async (id) => {
+  await db.query("DELETE FROM faqs WHERE id = $1", [id]);
 };

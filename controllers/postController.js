@@ -90,7 +90,7 @@ export const updatePostbyid = async (req, res) => {
     // Call model function
     const result = await updatePost(id, postData);
 
-    if (result.affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ message: "Post not found" });
     }
 

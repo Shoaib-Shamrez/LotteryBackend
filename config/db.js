@@ -1,19 +1,19 @@
-import mysql from "mysql2";
+import pg from "pg";
+import dotenv from "dotenv";
 
-const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  port: 3306,
-  password: "",
-  database: "lottery_system",
+dotenv.config();
+
+const { Pool } = pg;
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
 
-db.connect((err) => {
-  if (err) {
-    console.error("Database connection failed:", err.message);
-  } else {
-    console.log("MySQL connected successfully");
-  }
+pool.on("connect", () => {
+  console.log("Connected to PostgreSQL database");
 });
 
-export default db;
+export default pool;

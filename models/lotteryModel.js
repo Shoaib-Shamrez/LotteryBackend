@@ -1,122 +1,87 @@
 import db from "../config/db.js";
 
-export const getAllNames = () => {
-  return new Promise((resolve, reject) => {
-    db.query("SELECT NAME FROM lotteries ORDER BY id ", (err, results) => {
-      if (err) reject(err);
-      else resolve(results.map((row) => row.NAME));
-    });
-  });
+export const getAllNames = async () => {
+  const { rows } = await db.query("SELECT NAME FROM lotteries ORDER BY id");
+  return rows.map((row) => row.name);
 };
 
-export const getLotteryBySlug = (slug) => {
-  return new Promise((resolve, reject) => {
-    db.query(
-      "SELECT * FROM lotteries WHERE slug = ?",
-      [slug],
-      (err, results) => {
-        if (err) reject(err);
-        else if (!results.length) resolve(null);
-        else {
-          const lottery = results[0];
-          resolve({
-            ...lottery,
-            How_To_Play: parseValue(lottery.How_To_Play),
-            Winners: parseValue(lottery.Winners),
-          });
-        }
-      }
-    );
-  });
-};
-export const getLotteryByName = (Name) => {
-  return new Promise((resolve, reject) => {
-    db.query(
-      "SELECT * FROM lotteries WHERE NAME = ?",
-      [Name],
-      (err, results) => {
-        if (err) reject(err);
-        else if (!results.length) resolve(null);
-        else {
-          const lottery = results[0];
-          resolve({
-            ...lottery,
-            How_To_Play: parseValue(lottery.How_To_Play),
-            Winners: parseValue(lottery.Winners),
-          });
-        }
-      }
-    );
-  });
+export const getLotteryBySlug = async (slug) => {
+  const { rows } = await db.query("SELECT * FROM lotteries WHERE slug = $1", [
+    slug,
+  ]);
+  if (rows.length === 0) return null;
+
+  const lottery = rows[0];
+  return {
+    ...lottery,
+    how_to_play: parseValue(lottery.how_to_play),
+    winners: parseValue(lottery.winners),
+  };
 };
 
-export const updateLotteryById = (id, fields) => {
+export const getLotteryByName = async (name) => {
+  const { rows } = await db.query("SELECT * FROM lotteries WHERE NAME = $1", [
+    name,
+  ]);
+  if (rows.length === 0) return null;
+
+  const lottery = rows[0];
+  return {
+    ...lottery,
+    how_to_play: parseValue(lottery.how_to_play),
+    winners: parseValue(lottery.winners),
+  };
+};
+
+export const updateLotteryById = async (id, fields) => {
   const setClause = Object.keys(fields)
-    .map((key) => `${key} = ?`)
+    .map((key, index) => `"${key}" = $${index + 1}`)
     .join(", ");
   const values = Object.values(fields);
   values.push(id);
 
-  return new Promise((resolve, reject) => {
-    db.query(
-      `UPDATE lotteries SET ${setClause} WHERE id = ?`,
-      values,
-      (err) => {
-        if (err) reject(err);
-        else resolve();
-      }
-    );
-  });
+  const query = `UPDATE lotteries SET ${setClause} WHERE id = $${values.length}`;
+  await db.query(query, values);
 };
 
-export const createLottery = (
+export const createLottery = async (
   name,
   slug,
   history,
-  How_To_Play,
-  Winners,
+  how_to_play,
+  winners,
   description,
   draw_days,
   draw_time
 ) => {
-  return new Promise((resolve, reject) => {
-    const parsedHowToPlay = Array.isArray(How_To_Play)
-      ? JSON.stringify(How_To_Play)
-      : How_To_Play;
-    const parsedWinners = Array.isArray(Winners)
-      ? JSON.stringify(Winners)
-      : Winners;
+  const parsedHowToPlay = Array.isArray(how_to_play)
+    ? JSON.stringify(how_to_play)
+    : how_to_play;
+  const parsedWinners = Array.isArray(winners)
+    ? JSON.stringify(winners)
+    : winners;
 
-    db.query(
-      "INSERT INTO `lotteries`(`NAME`, `slug`, `description`, `History`, `How_To_Play`, `Winners`, `draw_days`, `draw_time`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        name,
-        slug,
-        description,
-        history,
-        parsedHowToPlay,
-        parsedWinners,
-        draw_days,
-        draw_time,
-      ],
-      (err, result) => {
-        if (err) reject(err);
-        else resolve({ id: result.insertId });
-      }
-    );
-  });
+  const { rows } = await db.query(
+    "INSERT INTO lotteries (NAME, slug, description, History, how_to_play, winners, draw_days, draw_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+    [
+      name,
+      slug,
+      description,
+      history,
+      parsedHowToPlay,
+      parsedWinners,
+      draw_days,
+      draw_time,
+    ]
+  );
+  return { id: rows[0].id };
 };
 
-export const deleteLottery = (id) => {
-  return new Promise((resolve, reject) => {
-    db.query("DELETE FROM lotteries WHERE id = ?", [id], (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
+export const deleteLottery = async (id) => {
+  await db.query("DELETE FROM lotteries WHERE id = $1", [id]);
 };
 
-// ✅ This function handles both JSON and comma-separated text
+// This function handles both JSON and comma-separated text
 const parseValue = (value) => {
   if (!value) return [];
 
