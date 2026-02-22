@@ -19,6 +19,7 @@ import postRoutes from "./routes/postRoutes.js";
 import seoRoutes from "./routes/seoRoutes.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import winnerRoutes from "./routes/winnerRoutes.js";
+import SitemapRoute from "./routes/sitemap.js";
 import prizeBreakdown from "./routes/prizeBreakRoute.js";
 import { testEmailConfig } from "./utils/emailService.js";
 import Jackpotroutes from "./routes/jackpotRoutes.js";
@@ -50,6 +51,7 @@ app.use("/api/site", siteRoutes);
 app.use("/api/seo", seoRoutes);
 app.use("/api/subscriber", subscriptionRoutes);
 app.use("/api/winners", winnerRoutes);
+app.use("/api/sitemaps", SitemapRoute);
 
 // ============================================
 // NEW: Sitemap route (serves sitemap.xml)
