@@ -36,7 +36,7 @@ export class NYOpenDataProvider {
     }
 
     url = `${url}?${params.toString()}`;
-    console.log(`[Sync Provider] Fetching URL: ${url}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`[Sync Provider] Fetching URL: ${url}`);
 
     const res = await fetch(url, {
       headers: {

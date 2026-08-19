@@ -24,7 +24,7 @@ export class IngestionSyncEngine {
    * @param {boolean} [dryRun=false] 
    * @returns {Promise<Object>} Execution report
    */
-  async sync(category, date, dryRun = false) {
+async sync(category, date, dryRun = false) {
     const startTime = Date.now();
     const cat = category.toLowerCase();
     const report = {
@@ -38,7 +38,8 @@ export class IngestionSyncEngine {
       duplicates: 0,
       corrections: 0,
       errors: [],
-      details: []
+      details: [],
+      durationMs: 0
     };
 
     console.log(`[Sync Engine] Starting sync for category: ${cat}, date: ${date || "latest"}${dryRun ? " (DRY RUN)" : ""}`);
@@ -46,6 +47,15 @@ export class IngestionSyncEngine {
     try {
       const rawRecords = await this.provider.fetchRawResults(cat, date);
       report.fetched = rawRecords.length;
+
+      // Handle empty provider result
+      if (report.fetched === 0) {
+        report.message = "No draws found for the requested category/date";
+        report.durationMs = Date.now() - startTime;
+        return report;
+      }
+
+
 
       for (const raw of rawRecords) {
         const drawDetails = {

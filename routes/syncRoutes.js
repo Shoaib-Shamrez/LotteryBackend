@@ -75,4 +75,3 @@ router.post("/trigger", syncAuthMiddleware, async (req, res) => {
 });
 
 export default router;
-// Duplicate route definitions removed

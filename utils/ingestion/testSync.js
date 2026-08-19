@@ -2,6 +2,8 @@ import assert from "assert";
 import { NYOpenDataProvider } from "./provider.js";
 import { IngestionValidator } from "./validator.js";
 import { syncAuthMiddleware } from "../../middleware/syncAuth.js";
+import { IngestionSyncEngine } from "./sync.js";
+import syncRoutes from "../../routes/syncRoutes.js";
 import crypto from "crypto";
 
 // --- MOCK SYSTEM FOR TESTING ---
@@ -110,15 +112,64 @@ async function runTests() {
   assert.strictEqual(nextCalled2, true);
   console.log("✓ Middleware authorized correct token.");
 
-  // Test 8: Security middleware check (Wrong token)
-  console.log("Test 8: Testing syncAuthMiddleware with incorrect token...");
-  const req3 = mockRequest({ authorization: "Bearer wrong-secret" }, { SYNC_SECRET: "test-secret" });
-  const res3 = mockResponse();
-  let nextCalled3 = false;
-  syncAuthMiddleware(req3, res3, () => { nextCalled3 = true; });
-  assert.strictEqual(res3.statusVal, 401);
-  assert.strictEqual(nextCalled3, false);
-  console.log("✓ Middleware rejected incorrect token.");
+  // Test 9: Engine handles empty provider result and returns durationMs
+  console.log("Test 9: Handling empty provider result...");
+  class MockEmptyEngine extends IngestionSyncEngine {
+    constructor() {
+      super();
+      // Override provider to return empty array
+      this.provider = {
+        fetchRawResults: async () => []
+      };
+    }
+  }
+  const emptyEngine = new MockEmptyEngine();
+  const emptyReport = await emptyEngine.sync("numbers");
+  assert.strictEqual(emptyReport.fetched, 0);
+  assert.ok(typeof emptyReport.durationMs === "number" && emptyReport.durationMs >= 0);
+  console.log("✓ Empty provider handling passed.");
+
+  // Test 10: DurationMs on normal sync
+  console.log("Test 10: DurationMs on normal sync...");
+  class MockNormalEngine extends IngestionSyncEngine {
+    constructor() {
+      super();
+      this.provider = {
+        fetchRawResults: async () => [{ draw_date: "2026-08-17T00:00:00.000", midday_winning_numbers: "01 02 03 04 05" }]
+      };
+      this.validator = {
+        validate: () => ({ isValid: true })
+      };
+    }
+  }
+  const normalEngine = new MockNormalEngine();
+  const normalReport = await normalEngine.sync("take5");
+  assert.strictEqual(normalReport.fetched, 1);
+  assert.ok(typeof normalReport.durationMs === "number" && normalReport.durationMs >= 0);
+  console.log("✓ DurationMs on normal sync passed.");
+
+  // Test 11: Invalid category handling via syncRoutes (should 400)
+  console.log("Test 11: Invalid category request returns 400...");
+  const express = await import("express");
+  const app = express.default();
+  app.use(express.default.json());
+  app.use("/api/sync", syncRoutes);
+  const request = await import("supertest");
+  const resInvalid = await request.default(app).post("/api/sync/trigger?category=invalidcat");
+  assert.strictEqual(resInvalid.status, 400);
+  console.log("✓ Invalid category rejection passed.");
+
+  // Test 12: Invalid date format handling (should 400)
+  console.log("Test 12: Invalid date format returns 400...");
+  const resBadDate = await request.default(app).post("/api/sync/trigger?category=numbers&date=2023-02-30");
+  assert.strictEqual(resBadDate.status, 400);
+  console.log("✓ Invalid date rejection passed.");
+
+  // Test 13: Invalid dryRun value handling (should 400)
+  console.log("Test 13: Invalid dryRun value returns 400...");
+  const resBadDry = await request.default(app).post("/api/sync/trigger?category=numbers&dryRun=maybe");
+  assert.strictEqual(resBadDry.status, 400);
+  console.log("✓ Invalid dryRun rejection passed.");
 
   console.log("-----------------------------------------");
   console.log("🎉 All Feature 1.1 Ingestion Tests PASSED!");

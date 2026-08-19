@@ -23,7 +23,13 @@ export const syncAuthMiddleware = (req, res, next) => {
   // Use timing-safe constant-time comparison via SHA-256 hashing to protect against timing attacks
   const secretHash = crypto.createHash("sha256").update(secret).digest();
   const tokenHash = crypto.createHash("sha256").update(token).digest();
-
+  // Guard against length mismatch to avoid timingSafeEqual throwing
+  if (secretHash.length !== tokenHash.length) {
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized"
+    });
+  }
   try {
     if (crypto.timingSafeEqual(secretHash, tokenHash)) {
       return next();

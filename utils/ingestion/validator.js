@@ -15,10 +15,16 @@ export class IngestionValidator {
       errors.push(`Invalid or missing drawDate: ${drawDate}`);
     }
 
-    if (!middayWinningNumbers && !eveningWinningNumbers) {
+    // Guard against null/undefined/empty-string values for winning numbers
+    const isEmpty = (val) => val === null || val === undefined || (typeof val === 'string' && val.trim() === '');
+    const safeMidday = isEmpty(middayWinningNumbers) ? null : middayWinningNumbers;
+    const safeEvening = isEmpty(eveningWinningNumbers) ? null : eveningWinningNumbers;
+    if (!safeMidday && !safeEvening) {
       errors.push("Missing both midday and evening winning numbers");
       return { isValid: false, errors };
     }
+    // Use safe values for further validation
+
 
     const validateNumbers = (numbers, listName) => {
       if (!numbers) return;
@@ -165,8 +171,8 @@ export class IngestionValidator {
       }
     };
 
-    validateNumbers(middayWinningNumbers, "Midday");
-    validateNumbers(eveningWinningNumbers, "Evening");
+    validateNumbers(safeMidday, "Midday");
+    validateNumbers(safeEvening, "Evening");
 
     return {
       isValid: errors.length === 0,
