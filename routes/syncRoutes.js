@@ -1,3 +1,4 @@
+// LotteryBackend/routes/syncRoutes.js
 import express from "express";
 import { syncAuthMiddleware } from "../middleware/syncAuth.js";
 import { IngestionSyncEngine } from "../utils/ingestion/sync.js";
@@ -5,34 +6,73 @@ import { IngestionSyncEngine } from "../utils/ingestion/sync.js";
 const router = express.Router();
 const engine = new IngestionSyncEngine();
 
+// Allowed categories for ingestion
+const ALLOWED_CATEGORIES = [
+  "numbers",
+  "win4",
+  "take5",
+  "lotto",
+  "powerball",
+  "megamillions"
+];
+
+// Helper to validate date string (YYYY-MM-DD) and ensure it's a real date
+function isValidDate(dateStr) {
+  const regex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!regex.test(dateStr)) return false;
+  const date = new Date(dateStr + "T00:00:00.000");
+  return !isNaN(date.getTime()) && date.toISOString().startsWith(dateStr);
+}
+
 router.post("/trigger", syncAuthMiddleware, async (req, res) => {
+  const startTime = Date.now();
   const { category, date, dryRun } = req.query;
 
+  // --- Input validation ---
   if (!category) {
+    return res.status(400).json({ success: false, error: "Query parameter 'category' is required." });
+  }
+
+  if (!ALLOWED_CATEGORIES.includes(category.toLowerCase())) {
     return res.status(400).json({
       success: false,
-      error: "Query parameter 'category' is required."
+      error: `Unsupported category '${category}'. Allowed categories: ${ALLOWED_CATEGORIES.join(", ")}.`
     });
+  }
+
+  if (date !== undefined && date !== null && date !== "") {
+    if (!isValidDate(date)) {
+      return res.status(400).json({ success: false, error: `Invalid date format '${date}'. Expected YYYY-MM-DD.` });
+    }
+  }
+
+  if (dryRun !== undefined && dryRun !== null && dryRun !== "") {
+    if (dryRun !== "true" && dryRun !== "false") {
+      return res.status(400).json({ success: false, error: "Query parameter 'dryRun' must be 'true' or 'false' if provided." });
+    }
   }
 
   const isDryRun = dryRun === "true";
 
   try {
     const report = await engine.sync(category, date, isDryRun);
-    
+    // Ensure durationMs is always present
+    report.durationMs = Date.now() - startTime;
     if (!report.success) {
       return res.status(500).json(report);
     }
-    
     return res.status(200).json(report);
   } catch (err) {
     console.error("[Sync Router] Unexpected execution error:", err);
-    return res.status(500).json({
+    const report = {
       success: false,
       error: "An unexpected error occurred during sync execution.",
-      details: err.message
-    });
+      details: err.message,
+      durationMs: Date.now() - startTime
+    };
+    return res.status(500).json(report);
   }
 });
 
 export default router;
+// Duplicate route definitions removed
