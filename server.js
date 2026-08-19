@@ -25,6 +25,8 @@ import { testEmailConfig } from "./utils/emailService.js";
 import Jackpotroutes from "./routes/jackpotRoutes.js";
 import siteRoutes from "./routes/siteRoutes.js";
 
+import syncRoutes from "./routes/syncRoutes.js";
+
 dotenv.config();
 const app = express();
 
@@ -52,6 +54,8 @@ app.use("/api/seo", seoRoutes);
 app.use("/api/subscriber", subscriptionRoutes);
 app.use("/api/winners", winnerRoutes);
 app.use("/api/sitemaps", SitemapRoute);
+app.use("/api/sync", syncRoutes);
+
 
 // ============================================
 // NEW: Sitemap route (serves sitemap.xml)
