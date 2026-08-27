@@ -135,7 +135,12 @@ async function runTests() {
     constructor() {
       super();
       this.provider = {
-        fetchRawResults: async () => [{ draw_date: "2026-08-17T00:00:00.000", midday_winning_numbers: "01 02 03 04 05" }]
+        fetchRawResults: async () => [{ draw_date: "2026-08-17T00:00:00.000", midday_winning_numbers: "01 02 03 04 05" }],
+        normalize: (cat, raw) => ({
+          drawDate: raw.draw_date ? raw.draw_date.split('T')[0] : null,
+          middayWinningNumbers: raw.midday_winning_numbers ? raw.midday_winning_numbers.split(' ') : [],
+          eveningWinningNumbers: raw.evening_winning_numbers ? raw.evening_winning_numbers.split(' ') : []
+        })
       };
       this.validator = {
         validate: () => ({ isValid: true })
@@ -155,19 +160,19 @@ async function runTests() {
   app.use(express.default.json());
   app.use("/api/sync", syncRoutes);
   const request = await import("supertest");
-  const resInvalid = await request.default(app).post("/api/sync/trigger?category=invalidcat");
+  const resInvalid = await request.default(app).post("/api/sync/trigger?category=invalidcat").set('Authorization', `Bearer ${process.env.SYNC_SECRET}`);
   assert.strictEqual(resInvalid.status, 400);
   console.log("✓ Invalid category rejection passed.");
 
   // Test 12: Invalid date format handling (should 400)
   console.log("Test 12: Invalid date format returns 400...");
-  const resBadDate = await request.default(app).post("/api/sync/trigger?category=numbers&date=2023-02-30");
+  const resBadDate = await request.default(app).post("/api/sync/trigger?category=numbers&date=2023-02-30").set('Authorization', `Bearer ${process.env.SYNC_SECRET}`);
   assert.strictEqual(resBadDate.status, 400);
   console.log("✓ Invalid date rejection passed.");
 
   // Test 13: Invalid dryRun value handling (should 400)
   console.log("Test 13: Invalid dryRun value returns 400...");
-  const resBadDry = await request.default(app).post("/api/sync/trigger?category=numbers&dryRun=maybe");
+  const resBadDry = await request.default(app).post("/api/sync/trigger?category=numbers&dryRun=maybe").set('Authorization', `Bearer ${process.env.SYNC_SECRET}`);
   assert.strictEqual(resBadDry.status, 400);
   console.log("✓ Invalid dryRun rejection passed.");
 

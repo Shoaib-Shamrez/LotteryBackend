@@ -1,7 +1,7 @@
 import { NYOpenDataProvider } from "./provider.js";
 import { IngestionValidator } from "./validator.js";
 import { getPostByCategoryAndDate, createPost, updatePost } from "../../models/postModel.js";
-
+import { createSyncLog } from "../../models/syncLogModel.js";
 const GAME_NAMES = {
   numbers: "New York Daily Numbers",
   win4: "New York Win 4",
@@ -52,10 +52,15 @@ async sync(category, date, dryRun = false) {
       if (report.fetched === 0) {
         report.message = "No draws found for the requested category/date";
         report.durationMs = Date.now() - startTime;
+        // Persist sync log for empty result
+        try {
+          const logId = await createSyncLog(report);
+          report.logId = logId;
+        } catch (logErr) {
+          console.error('[Sync Engine] Failed to persist sync log (empty result):', logErr);
+        }
         return report;
       }
-
-
 
       for (const raw of rawRecords) {
         const drawDetails = {
@@ -178,6 +183,13 @@ async sync(category, date, dryRun = false) {
     }
 
     report.durationMs = Date.now() - startTime;
+    // Persist sync log (both success and failure)
+    try {
+      const logId = await createSyncLog(report);
+      report.logId = logId;
+    } catch (logErr) {
+      console.error('[Sync Engine] Failed to persist sync log:', logErr);
+    }
     return report;
   }
 
