@@ -75,14 +75,22 @@ router.post("/trigger", syncAuthMiddleware, async (req, res) => {
 
 // GET all sync logs with pagination
 router.get('/logs', syncAuthMiddleware, async (req, res) => {
-  const limit = parseInt(req.query.limit) || 100;
-  const offset = parseInt(req.query.offset) || 0;
+  const rawLimit = req.query.limit;
+  const rawOffset = req.query.offset;
+  const limit = rawLimit === undefined ? 100 : parseInt(rawLimit, 10);
+  const offset = rawOffset === undefined ? 0 : parseInt(rawOffset, 10);
+  if (!Number.isFinite(limit) || limit <= 0 || limit > 200) {
+    return res.status(400).json({ success: false, error: "Invalid 'limit' query param. Must be integer between 1 and 200." });
+  }
+  if (!Number.isFinite(offset) || offset < 0) {
+    return res.status(400).json({ success: false, error: "Invalid 'offset' query param. Must be non-negative integer." });
+  }
   try {
     const logs = await getSyncLogs({ limit, offset });
     return res.status(200).json(logs);
   } catch (err) {
     console.error('[Sync Router] Error fetching logs:', err);
-    return res.status(500).json({ error: 'Failed to fetch logs' });
+    return res.status(500).json({ success: false, error: 'Failed to fetch logs' });
   }
 });
 
@@ -91,11 +99,11 @@ router.get('/logs/:id', syncAuthMiddleware, async (req, res) => {
   const { id } = req.params;
   try {
     const log = await getSyncLogById(id);
-    if (!log) return res.status(404).json({ error: 'Log not found' });
-    return res.status(200).json(log);
+    if (!log) return res.status(404).json({ success: false, error: 'Log not found' });
+    return res.status(200).json({ success: true, log });
   } catch (err) {
     console.error('[Sync Router] Error fetching log:', err);
-    return res.status(500).json({ error: 'Failed to fetch log' });
+    return res.status(500).json({ success: false, error: 'Failed to fetch log' });
   }
 });
 
