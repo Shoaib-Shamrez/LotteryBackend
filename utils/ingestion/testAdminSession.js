@@ -146,6 +146,31 @@ async function runTests() {
     console.log("✓ T9 bearer-only rejected by adminSessionAuth (no fallback)");
   }
 
+  // T10: GET /api/user/me unauthenticated -> 401
+  {
+    const fresh = request(app);
+    const r = await fresh.get("/api/user/me");
+    assert.strictEqual(r.status, 401, `expected 401 got ${r.status}`);
+    console.log("✓ T10 /api/user/me unauthenticated -> 401");
+  }
+
+  // T11: GET /api/user/me with valid admin_session cookie -> 200 with correct user object
+  {
+    const meAgent = request.agent(app);
+    await meAgent
+      .post("/api/user/login")
+      .send({ email: TEST_ADMIN_EMAIL, password: TEST_ADMIN_PWD });
+    const r = await meAgent.get("/api/user/me");
+    assert.strictEqual(r.status, 200, `expected 200 got ${r.status}: ${JSON.stringify(r.body)}`);
+    assert.strictEqual(r.body.success, true);
+    assert.ok(r.body.user, "user object must be present");
+    assert.strictEqual(r.body.user.role, "admin");
+    assert.strictEqual(r.body.user.email, TEST_ADMIN_EMAIL);
+    assert.strictEqual(r.body.user.password, undefined, "password must not be returned");
+    assert.ok(Number.isFinite(r.body.user.id), "id must be numeric");
+    console.log(`✓ T11 /api/user/me authenticated -> 200 (id=${r.body.user.id}, role=${r.body.user.role})`);
+  }
+
   console.log("🎉 All Admin Session Cookie Auth Tests PASSED!");
   await pool.end();
   process.exit(0);

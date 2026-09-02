@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import {
   getAllUsers,
   getUserByEmail,
+  getUserById,
   createUser,
   deleteUser,
   updateUser,
@@ -91,6 +92,27 @@ export const loginUser = async (req, res) => {
 export const logoutUser = (req, res) => {
   res.clearCookie("admin_session", { path: "/" });
   res.status(200).json({ success: true, message: "Logged out" });
+};
+
+export const meUser = async (req, res) => {
+  try {
+    const user = await getUserById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        name: user.name
+      }
+    });
+  } catch (err) {
+    console.error("Error in /api/user/me:", err);
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
 };
 
 export const getUsers = async (req, res) => {

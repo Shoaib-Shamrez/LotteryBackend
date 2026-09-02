@@ -15,6 +15,14 @@ export const getUserByEmail = async (email) => {
   return rows[0];
 };
 
+export const getUserById = async (id) => {
+  const { rows } = await db.query(
+    "SELECT id, name, email, role, created_at FROM users WHERE id = $1",
+    [id]
+  );
+  return rows[0];
+};
+
 export const createUser = async (name, email, password, role) => {
   const { rows } = await db.query(
     "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id",
