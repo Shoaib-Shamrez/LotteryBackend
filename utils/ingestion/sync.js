@@ -19,12 +19,31 @@ export class IngestionSyncEngine {
 
   /**
    * Syncs draw results for a given category and optional date.
-   * @param {string} category 
-   * @param {string} [date] 
-   * @param {boolean} [dryRun=false] 
+   * Backward-compatible single-shot API; delegates to syncSingle with no runId.
+   *
+   * @param {string} category
+   * @param {string} [date]
+   * @param {boolean} [dryRun=false]
    * @returns {Promise<Object>} Execution report
    */
-async sync(category, date, dryRun = false) {
+  async sync(category, date, dryRun = false) {
+    return this.syncSingle(category, date, dryRun, null);
+  }
+
+  /**
+   * Syncs draw results for a given category and optional date and persists
+   * a sync_logs row linked to the optional sync_runs.runId.
+   *
+   * This is the single owner of sync_log creation. Controllers must not write
+   * sync_logs directly.
+   *
+   * @param {string} category
+   * @param {string} [date]
+   * @param {boolean} [dryRun=false]
+   * @param {number|null} [runId=null]  Optional parent sync_run id.
+   * @returns {Promise<Object>} Execution report (with logId).
+   */
+  async syncSingle(category, date, dryRun = false, runId = null) {
     const startTime = Date.now();
     const cat = category.toLowerCase();
     const report = {
@@ -39,7 +58,8 @@ async sync(category, date, dryRun = false) {
       corrections: 0,
       errors: [],
       details: [],
-      durationMs: 0
+      durationMs: 0,
+      runId
     };
 
     console.log(`[Sync Engine] Starting sync for category: ${cat}, date: ${date || "latest"}${dryRun ? " (DRY RUN)" : ""}`);
@@ -54,7 +74,7 @@ async sync(category, date, dryRun = false) {
         report.durationMs = Date.now() - startTime;
         // Persist sync log for empty result
         try {
-          const logId = await createSyncLog(report);
+          const logId = await createSyncLog(report, runId);
           report.logId = logId;
         } catch (logErr) {
           console.error('[Sync Engine] Failed to persist sync log (empty result):', logErr);
@@ -185,7 +205,7 @@ async sync(category, date, dryRun = false) {
     report.durationMs = Date.now() - startTime;
     // Persist sync log (both success and failure)
     try {
-      const logId = await createSyncLog(report);
+      const logId = await createSyncLog(report, runId);
       report.logId = logId;
     } catch (logErr) {
       console.error('[Sync Engine] Failed to persist sync log:', logErr);

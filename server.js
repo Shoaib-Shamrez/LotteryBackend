@@ -26,6 +26,7 @@ import Jackpotroutes from "./routes/jackpotRoutes.js";
 import siteRoutes from "./routes/siteRoutes.js";
 
 import syncRoutes from "./routes/syncRoutes.js";
+import adminSyncRoutes from "./routes/adminSyncRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -55,6 +56,7 @@ app.use("/api/subscriber", subscriptionRoutes);
 app.use("/api/winners", winnerRoutes);
 app.use("/api/sitemaps", SitemapRoute);
 app.use("/api/sync", syncRoutes);
+app.use("/api/admin/sync", adminSyncRoutes);
 
 
 // ============================================
