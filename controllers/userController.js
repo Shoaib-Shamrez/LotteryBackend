@@ -7,6 +7,7 @@ import {
   updateUser,
   CountSubs,
 } from "../models/userModel.js";
+import { signAdminSession } from "../middleware/adminSessionAuth.js";
 
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
@@ -45,19 +46,27 @@ export const loginUser = async (req, res) => {
       return res.status(500).json({ message: "Account configuration error" });
     }
 
-    // Debug logging
-    console.log("Login attempt for:", email);
-    console.log("User found:", {
-      id: user.id,
-      email: user.email,
-      hasPassword: !!user.password,
-    });
-
     // Compare provided password with hashed password in database
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
       return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    // Issue admin_session cookie (HttpOnly, SameSite=None; Secure, 24h)
+    try {
+      const token = signAdminSession({ uid: user.id, role: user.role });
+      res.cookie("admin_session", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "none",
+        path: "/",
+        maxAge: 24 * 60 * 60 * 1000
+      });
+    } catch (cookieErr) {
+      console.error("Failed to sign admin_session cookie:", cookieErr.message);
+      // Continue without cookie — login itself succeeded; client will get 500 if secret missing.
+      return res.status(500).json({ message: "Authentication system error" });
     }
 
     // If password is valid, return user data (without password)
@@ -70,7 +79,6 @@ export const loginUser = async (req, res) => {
   } catch (err) {
     console.error("Login error:", err);
 
-    // More specific error messages
     if (err.message.includes("data and hash arguments required")) {
       console.error("BCrypt error - likely missing password data");
       return res.status(500).json({ message: "Authentication system error" });
@@ -78,6 +86,11 @@ export const loginUser = async (req, res) => {
 
     res.status(500).json({ error: "Internal server error" });
   }
+};
+
+export const logoutUser = (req, res) => {
+  res.clearCookie("admin_session", { path: "/" });
+  res.status(200).json({ success: true, message: "Logged out" });
 };
 
 export const getUsers = async (req, res) => {

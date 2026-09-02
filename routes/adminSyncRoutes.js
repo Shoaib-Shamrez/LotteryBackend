@@ -1,5 +1,6 @@
 import express from "express";
-import { syncAuthMiddleware } from "../middleware/syncAuth.js";
+import { adminSessionAuth } from "../middleware/adminSessionAuth.js";
+import { requireRole } from "../middleware/requireRole.js";
 import {
   listRunsHandler,
   getRunHandler,
@@ -10,7 +11,7 @@ import {
 
 const router = express.Router();
 
-router.use(syncAuthMiddleware);
+router.use(adminSessionAuth, requireRole("admin", "superadmin"));
 
 router.get("/runs", listRunsHandler);
 router.get("/runs/:id", getRunHandler);

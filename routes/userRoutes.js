@@ -1,11 +1,11 @@
 import express from "express";
-// import {} from "../controller/userController.js";
 import {
   addUser,
   getSubscriberCount,
   getUser,
   getUsers,
   loginUser,
+  logoutUser,
   removeUser,
   userUpdate,
 } from "../controllers/userController.js";
@@ -16,6 +16,7 @@ router.get("/users", getUsers);
 router.get("/subs", getSubscriberCount);
 
 router.post("/login", loginUser);
+router.post("/logout", logoutUser);
 
 router.get("/user/:email", getUser);
 router.put("/:id", userUpdate);

@@ -32,7 +32,23 @@ dotenv.config();
 const app = express();
 
 // Middleware
-app.use(cors());
+const ALLOWED_ORIGINS = (process.env.ADMIN_FRONTEND_ORIGINS ||
+  "http://localhost:5173,http://localhost:3000")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // same-origin / curl / server-to-server
+    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  maxAge: 86400
+}));
 app.use(express.json());
 app.set("trust proxy", true);
 
@@ -86,5 +102,11 @@ app.get("/ping", (req, res) => {
 //updated
 
 // Server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+if (process.env.NODE_ENV !== "test") {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`✅ Server running on port ${PORT}`);
+  });
+}
+
+export { app };

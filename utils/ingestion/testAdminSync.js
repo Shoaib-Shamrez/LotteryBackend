@@ -1,21 +1,49 @@
 // utils/ingestion/testAdminSync.js
 // Feature 2.2 admin sync operator endpoint tests.
 //
-// Uses supertest to mount adminSyncRoutes directly.
+// Uses the real configured app (imported from server.js) and authenticates
+// as a browser admin via the admin_session cookie. No bearer tokens.
+
+process.env.NODE_ENV = "test";
+process.env.SYNC_SECRET = process.env.SYNC_SECRET || "test-secret";
+process.env.ADMIN_SESSION_SECRET =
+  process.env.ADMIN_SESSION_SECRET || "test-session-secret-32-chars-minimum-xyz";
+process.env.ADMIN_FRONTEND_ORIGINS =
+  process.env.ADMIN_FRONTEND_ORIGINS || "http://localhost:5173";
+
 import assert from "assert";
-import express from "express";
-import request from "supertest";
-import adminSyncRoutes from "../../routes/adminSyncRoutes.js";
+import bcrypt from "bcrypt";
 import pool from "../../config/db.js";
 
-process.env.SYNC_SECRET = process.env.SYNC_SECRET || "test-secret";
-const TOKEN = `Bearer ${process.env.SYNC_SECRET}`;
+const { app } = await import("../../server.js");
+const { default: request } = await import("supertest");
 
-function buildApp() {
-  const app = express();
-  app.use(express.json());
-  app.use("/api/admin/sync", adminSyncRoutes);
-  return app;
+const TEST_ADMIN_EMAIL = "test-admin@lottery.local";
+const TEST_ADMIN_PWD = "TestPass123!";
+
+async function ensureTestAdmin() {
+  const { rows } = await pool.query("SELECT id FROM users WHERE email = $1", [TEST_ADMIN_EMAIL]);
+  const hash = await bcrypt.hash(TEST_ADMIN_PWD, 10);
+  if (rows.length > 0) {
+    await pool.query(
+      "UPDATE users SET password = $1, role = 'admin', name = 'Test Admin' WHERE email = $2",
+      [hash, TEST_ADMIN_EMAIL]
+    );
+    return rows[0].id;
+  }
+  const { rows: ins } = await pool.query(
+    "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, 'admin') RETURNING id",
+    ["Test Admin", TEST_ADMIN_EMAIL, hash]
+  );
+  return ins[0].id;
+}
+
+async function loginAsAdmin(agent) {
+  const r = await agent
+    .post("/api/user/login")
+    .send({ email: TEST_ADMIN_EMAIL, password: TEST_ADMIN_PWD });
+  assert.strictEqual(r.status, 200, `login expected 200 got ${r.status}`);
+  return r;
 }
 
 async function fetchLatestPostId() {
@@ -25,18 +53,23 @@ async function fetchLatestPostId() {
 
 async function runTests() {
   console.log("--- Feature 2.2 Admin Sync Tests ---");
-  const app = buildApp();
 
-  // T1: missing auth -> 401
+  await ensureTestAdmin();
+
+  const agent = request.agent(app);
+
+  // T1: missing authentication -> 401 (no cookie yet)
   {
-    const r = await request(app).get("/api/admin/sync/runs");
-    assert.strictEqual(r.status, 401, "missing auth should be 401");
+    const fresh = request(app);
+    const r = await fresh.get("/api/admin/sync/runs");
+    assert.strictEqual(r.status, 401, `expected 401 got ${r.status}`);
     console.log("✓ T1 missing auth rejected");
   }
 
-  // T2: list runs -> 200, array
+  // T2: list runs (authenticated) -> 200, array
+  await loginAsAdmin(agent);
   {
-    const r = await request(app).get("/api/admin/sync/runs").set("Authorization", TOKEN);
+    const r = await agent.get("/api/admin/sync/runs");
     assert.strictEqual(r.status, 200);
     assert.ok(Array.isArray(r.body.runs), "runs must be array");
     console.log(`✓ T2 list runs OK (${r.body.runs.length} existing runs)`);
@@ -45,9 +78,8 @@ async function runTests() {
   // T3: manual run, single date -> 200, one run + one log
   let manualRunId;
   {
-    const r = await request(app)
+    const r = await agent
       .post("/api/admin/sync/runs")
-      .set("Authorization", TOKEN)
       .send({ category: "take5", startDate: "2026-08-17", endDate: "2026-08-17" });
     assert.strictEqual(r.status, 200, `expected 200 got ${r.status}: ${JSON.stringify(r.body)}`);
     assert.ok(r.body.runId, "runId present");
@@ -64,9 +96,8 @@ async function runTests() {
   // T4: manual run, range of 3 dates -> ONE run, multiple logs sharing run_id
   let rangeRunId;
   {
-    const r = await request(app)
+    const r = await agent
       .post("/api/admin/sync/runs")
-      .set("Authorization", TOKEN)
       .send({ category: "take5", startDate: "2026-08-15", endDate: "2026-08-17", dryRun: true });
     assert.strictEqual(r.status, 200, `expected 200 got ${r.status}: ${JSON.stringify(r.body)}`);
     rangeRunId = r.body.runId;
@@ -81,9 +112,8 @@ async function runTests() {
 
   // T5: invalid category -> 400
   {
-    const r = await request(app)
+    const r = await agent
       .post("/api/admin/sync/runs")
-      .set("Authorization", TOKEN)
       .send({ category: "totallyinvalid" });
     assert.strictEqual(r.status, 400);
     console.log("✓ T5 invalid category rejected");
@@ -91,9 +121,8 @@ async function runTests() {
 
   // T6: invalid date range (end<start) -> 400
   {
-    const r = await request(app)
+    const r = await agent
       .post("/api/admin/sync/runs")
-      .set("Authorization", TOKEN)
       .send({ category: "take5", startDate: "2026-08-17", endDate: "2026-08-15" });
     assert.strictEqual(r.status, 400);
     console.log("✓ T6 endDate<startDate rejected");
@@ -102,17 +131,12 @@ async function runTests() {
   // T7: retry the manual run, original untouched
   let retryRunId;
   {
-    // snapshot
-    const before = await request(app)
-      .get(`/api/admin/sync/runs/${manualRunId}`)
-      .set("Authorization", TOKEN);
+    const before = await agent.get(`/api/admin/sync/runs/${manualRunId}`);
     assert.strictEqual(before.status, 200);
     const beforeEndTime = before.body.run.end_time;
     const beforeSuccess = before.body.run.success;
 
-    const r = await request(app)
-      .post(`/api/admin/sync/runs/${manualRunId}/retry`)
-      .set("Authorization", TOKEN);
+    const r = await agent.post(`/api/admin/sync/runs/${manualRunId}/retry`);
     assert.strictEqual(r.status, 200, `expected 200 got ${r.status}: ${JSON.stringify(r.body)}`);
     assert.strictEqual(r.body.originalRunId, manualRunId);
     retryRunId = r.body.runId;
@@ -121,10 +145,7 @@ async function runTests() {
       assert.strictEqual(log.run_id, retryRunId, "retry logs link to NEW run");
     }
 
-    // verify original untouched
-    const after = await request(app)
-      .get(`/api/admin/sync/runs/${manualRunId}`)
-      .set("Authorization", TOKEN);
+    const after = await agent.get(`/api/admin/sync/runs/${manualRunId}`);
     assert.strictEqual(after.body.run.end_time, beforeEndTime, "original end_time unchanged");
     assert.strictEqual(after.body.run.success, beforeSuccess, "original success unchanged");
     assert.strictEqual(after.body.run.triggered_by, "manual", "original triggered_by unchanged");
@@ -133,18 +154,14 @@ async function runTests() {
 
   // T8: retry of non-existent run -> 404
   {
-    const r = await request(app)
-      .post("/api/admin/sync/runs/999999/retry")
-      .set("Authorization", TOKEN);
+    const r = await agent.post("/api/admin/sync/runs/999999/retry");
     assert.strictEqual(r.status, 404);
     console.log("✓ T8 retry not-found -> 404");
   }
 
   // T9: get run returns run + logs
   {
-    const r = await request(app)
-      .get(`/api/admin/sync/runs/${manualRunId}`)
-      .set("Authorization", TOKEN);
+    const r = await agent.get(`/api/admin/sync/runs/${manualRunId}`);
     assert.strictEqual(r.status, 200);
     assert.ok(r.body.run);
     assert.ok(Array.isArray(r.body.logs));
@@ -154,11 +171,9 @@ async function runTests() {
   // T10: override with bad numbers -> 400, no run created
   const postId = await fetchLatestPostId();
   assert.ok(postId, "expected at least one post in DB");
-  let overrideRunId = null;
   {
-    const r = await request(app)
+    const r = await agent
       .patch(`/api/admin/sync/draw/${postId}/override`)
-      .set("Authorization", TOKEN)
       .send({ midday_winnings: ["01", "02"] }); // take5 needs 5
     assert.strictEqual(r.status, 400, `expected 400 got ${r.status}: ${JSON.stringify(r.body)}`);
     assert.ok(Array.isArray(r.body.errors) && r.body.errors.length > 0);
@@ -166,11 +181,14 @@ async function runTests() {
   }
 
   // T11: override with valid numbers -> 200, run logged, errors null, audit captured
+  let overrideRunId = null;
   {
-    const r = await request(app)
+    const r = await agent
       .patch(`/api/admin/sync/draw/${postId}/override`)
-      .set("Authorization", TOKEN)
-      .send({ midday_winnings: ["05", "10", "15", "20", "25"], evening_winnings: ["01", "02", "03", "04", "05"] });
+      .send({
+        midday_winnings: ["05", "10", "15", "20", "25"],
+        evening_winnings: ["01", "02", "03", "04", "05"]
+      });
     assert.strictEqual(r.status, 200, `expected 200 got ${r.status}: ${JSON.stringify(r.body)}`);
     overrideRunId = r.body.runId;
     assert.ok(overrideRunId);
@@ -186,9 +204,8 @@ async function runTests() {
 
   // T12: override of non-existent post -> 404
   {
-    const r = await request(app)
-      .patch(`/api/admin/sync/draw/9999999/override`)
-      .set("Authorization", TOKEN)
+    const r = await agent
+      .patch("/api/admin/sync/draw/9999999/override")
       .send({ midday_winnings: ["05", "10", "15", "20", "25"] });
     assert.strictEqual(r.status, 404);
     console.log("✓ T12 override non-existent post -> 404");
@@ -196,9 +213,7 @@ async function runTests() {
 
   // T13: pagination + filter
   {
-    const r = await request(app)
-      .get("/api/admin/sync/runs?limit=5&offset=0&triggered_by=retry")
-      .set("Authorization", TOKEN);
+    const r = await agent.get("/api/admin/sync/runs?limit=5&offset=0&triggered_by=retry");
     assert.strictEqual(r.status, 200);
     assert.ok(Array.isArray(r.body.runs));
     for (const run of r.body.runs) {
@@ -209,9 +224,7 @@ async function runTests() {
 
   // T14: triggered_by=override filter excludes other runs
   {
-    const r = await request(app)
-      .get("/api/admin/sync/runs?triggered_by=override&limit=200")
-      .set("Authorization", TOKEN);
+    const r = await agent.get("/api/admin/sync/runs?triggered_by=override&limit=200");
     assert.strictEqual(r.status, 200);
     for (const run of r.body.runs) {
       assert.strictEqual(run.triggered_by, "override");
@@ -222,15 +235,14 @@ async function runTests() {
 
   // T15: bad pagination -> 400
   {
-    const r = await request(app)
-      .get("/api/admin/sync/runs?limit=0")
-      .set("Authorization", TOKEN);
+    const r = await agent.get("/api/admin/sync/runs?limit=0");
     assert.strictEqual(r.status, 400);
     console.log("✓ T15 bad pagination rejected");
   }
 
   console.log("🎉 All Feature 2.2 Admin Sync Tests PASSED!");
   await pool.end();
+  process.exit(0);
 }
 
 runTests().catch(async (err) => {
