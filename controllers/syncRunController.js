@@ -62,8 +62,10 @@ function isoDateRange(startDate, endDate) {
  * Internal executor for a created run.
  * Takes the plan (list of dates) and runs engine.syncSingle for each, linking logs.
  * Finalizes the run with aggregated status.
+ *
+ * Exported so the scheduler can reuse the exact same lifecycle.
  */
-async function executeRun({ runId, category, dates, dryRun }) {
+export async function executeRun({ runId, category, dates, dryRun }) {
   const perDate = [];
   const aggregatedErrors = [];
   let allSuccess = true;
@@ -117,8 +119,32 @@ async function executeRun({ runId, category, dates, dryRun }) {
   return { run: finalRun, logs };
 }
 
-// ---------- HTTP handlers ----------
+/**
+ * Scheduled execution entry point.
+ * Creates a single sync_run with triggered_by='scheduled' for one
+ * (category, date) and delegates to executeRun. Returns the run/logs
+ * result or null if createSyncRun failed.
+ *
+ * Used by utils/scheduler.js. Not exposed via HTTP.
+ */
+export async function runScheduledForCategory(category, date) {
+  let runId;
+  try {
+    runId = await createSyncRun({
+      category,
+      start_date: date,
+      end_date: date,
+      dry_run: false,
+      triggered_by: "scheduled"
+    });
+  } catch (err) {
+    console.error(`[Scheduler] createSyncRun failed for ${category}/${date}:`, err.message);
+    return null;
+  }
+  return executeRun({ runId, category, dates: [date], dryRun: false });
+}
 
+// ---------- HTTP handlers ----------
 /**
  * GET /api/admin/sync/runs
  * Query: category?, triggered_by?, success?, limit?, offset?

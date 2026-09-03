@@ -108,8 +108,17 @@ app.get("/ping", (req, res) => {
 // Server
 if (process.env.NODE_ENV !== "test") {
   const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
+  app.listen(PORT, async () => {
     console.log(`✅ Server running on port ${PORT}`);
+    // Start the scheduler AFTER the HTTP server is up. Non-blocking: the
+    // HTTP API stays available even if the scheduler never starts.
+    try {
+      const { startScheduler } = await import("./utils/scheduler.js");
+      const { runScheduledForCategory } = await import("./controllers/syncRunController.js");
+      await startScheduler({ runFor: runScheduledForCategory });
+    } catch (err) {
+      console.error("[Scheduler] failed to initialize:", err.message);
+    }
   });
 }
 
