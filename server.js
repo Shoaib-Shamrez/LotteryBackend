@@ -52,6 +52,23 @@ app.use(cors({
 app.use(express.json());
 app.set("trust proxy", true);
 
+// Sitemap route - dynamic, served from the database.
+// MUST be registered BEFORE express.static so it intercepts /sitemap.xml
+// instead of serving public/sitemap.xml.
+app.get("/sitemap.xml", async (req, res) => {
+  try {
+    const { getDynamicSitemap } = await import("./utils/sitemapService.js");
+    const { xml } = await getDynamicSitemap({ baseUrl: process.env.BASE_URL });
+    res.type("application/xml").send(xml);
+  } catch (err) {
+    console.error("Sitemap dynamic fetch failed, falling back to static file:", err.message);
+    const sitemapPath = path.join(__dirname, "public", "sitemap.xml");
+    res.sendFile(sitemapPath, (sendErr) => {
+      if (sendErr) res.status(500).send("Sitemap unavailable");
+    });
+  }
+});
+
 // ============================================
 // NEW: Serve static files (for sitemap)
 // ============================================
@@ -74,19 +91,6 @@ app.use("/api/sitemaps", SitemapRoute);
 app.use("/api/sync", syncRoutes);
 app.use("/api/admin/sync", adminSyncRoutes);
 
-
-// ============================================
-// NEW: Sitemap route (serves sitemap.xml)
-// ============================================
-app.get("/sitemap.xml", (req, res) => {
-  const sitemapPath = path.join(__dirname, "public", "sitemap.xml");
-  res.sendFile(sitemapPath, (err) => {
-    if (err) {
-      console.error("Error serving sitemap:", err);
-      res.status(404).send("Sitemap not found");
-    }
-  });
-});
 
 app.get("/api/test-email", async (req, res) => {
   const isValid = await testEmailConfig();

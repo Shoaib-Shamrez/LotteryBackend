@@ -2,14 +2,8 @@ import { NYOpenDataProvider } from "./provider.js";
 import { IngestionValidator } from "./validator.js";
 import { getPostByCategoryAndDate, createPost, updatePost } from "../../models/postModel.js";
 import { createSyncLog } from "../../models/syncLogModel.js";
-const GAME_NAMES = {
-  numbers: "New York Daily Numbers",
-  win4: "New York Win 4",
-  take5: "New York Take 5",
-  lotto: "New York Lotto",
-  powerball: "Powerball",
-  megamillions: "Mega Millions"
-};
+import { GAME_NAMES, generateSeoFields } from "../../utils/seoService.js";
+import { bustSitemapCache } from "../../utils/sitemapService.js";
 
 export class IngestionSyncEngine {
   constructor() {
@@ -113,8 +107,13 @@ export class IngestionSyncEngine {
             if (!dryRun) {
               const title = `${GAME_NAMES[cat]} Results for ${this.formatReadableDate(normalized.drawDate)}`;
               const description = `Check the winning numbers for ${GAME_NAMES[cat]} drawing on ${normalized.drawDate}.`;
-              const metaTitle = `${GAME_NAMES[cat]} Winning Numbers - ${normalized.drawDate}`;
-              const metaDescription = `Latest ${GAME_NAMES[cat]} winning numbers for ${normalized.drawDate}. Midday: ${normalized.middayWinningNumbers ? normalized.middayWinningNumbers.join(", ") : "N/A"}, Evening: ${normalized.eveningWinningNumbers ? normalized.eveningWinningNumbers.join(", ") : "N/A"}.`;
+              const { metaTitle, metaDescription } = generateSeoFields({
+                category: cat,
+                date: normalized.drawDate,
+                middayWinningNumbers: normalized.middayWinningNumbers,
+                eveningWinningNumbers: normalized.eveningWinningNumbers,
+                title
+              });
 
               const result = await createPost(
                 title,
@@ -128,7 +127,9 @@ export class IngestionSyncEngine {
                 metaDescription
               );
               drawDetails.id = result.id;
+              drawDetails.metaAutoFilled = true;
               console.log(`[Sync Engine] Created post for ${cat} on ${normalized.drawDate} with ID: ${result.id}`);
+              bustSitemapCache();
             }
             report.created++;
             drawDetails.status = "created";
@@ -181,6 +182,7 @@ export class IngestionSyncEngine {
 
                   await updatePost(existing.id, updatedPostData);
                   console.log(`[Sync Engine] Merged/Updated post for ${cat} on ${normalized.drawDate} (ID: ${existing.id})`);
+                  bustSitemapCache();
                 }
                 report.updated++;
                 drawDetails.status = "updated_merged";
