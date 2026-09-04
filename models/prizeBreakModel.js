@@ -62,6 +62,35 @@ export const addPrizeBreakdown = async (data) => {
   return { id: rows[0].id };
 };
 
+// Add multiple prize-breakdown rows for a post in a single atomic INSERT
+// (one statement => all rows or none). Rows: { draw_type, category, winners, prize_amount }
+// (winners/prize_amount nullable). This is the batch counterpart to addPrizeBreakdown.
+export const addPrizeBreakdownsBatch = async (postId, rows) => {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { inserted: 0, ids: [] };
+  }
+  const values = [];
+  const placeholders = [];
+  let param = 1;
+  for (const r of rows) {
+    placeholders.push(`($${param}, $${param + 1}, $${param + 2}, $${param + 3}, $${param + 4})`);
+    param += 5;
+    values.push(
+      postId,
+      r.draw_type,
+      r.category,
+      r.winners !== undefined ? r.winners : null,
+      r.prize_amount !== undefined ? r.prize_amount : null
+    );
+  }
+  const sql =
+    "INSERT INTO prize_breakdowns (post_id, draw_type, category, winners, prize_amount) VALUES " +
+    placeholders.join(", ") +
+    " RETURNING id";
+  const res = await db.query(sql, values);
+  return { inserted: res.rowCount, ids: res.rows.map((r) => r.id) };
+};
+
 // Delete all prize breakdowns for a post
 export const deletePrizeBreakdowns = async (postId) => {
   const { rowCount } = await db.query(

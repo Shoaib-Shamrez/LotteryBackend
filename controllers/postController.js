@@ -18,6 +18,7 @@ import { getAllSubscribers } from "../models/subscriberModel.js";
 import { sendPostNotificationEmails } from "../utils/emailService.js";
 import { addPostToSitemap, bustSitemapCache } from "../utils/sitemapService.js";
 import { generateSeoFields } from "../utils/seoService.js";
+import { autoGeneratePrizeBreakdowns } from "../utils/prizeBreakdownService.js";
 
 function resolveMetaField({ submitted, existing, fallback }) {
   const s = (submitted === null || submitted === undefined ? "" : String(submitted)).trim();
@@ -261,6 +262,17 @@ export const addPost = async (req, res) => {
 
     // Step 4: Bust sitemap cache so the next dynamic GET reflects this new post.
     bustSitemapCache();
+
+    // Auto-generate the static prize-tier skeleton for the new draw.
+    // Fire-and-forget: best-effort, must never fail the post creation.
+    autoGeneratePrizeBreakdowns({
+      postId,
+      category: String(category || "").toLowerCase(),
+      post: {
+        midday_winnings: MiddaywinningNumbers,
+        evening_winnings: EveningwinningNumbers
+      }
+    }).catch((err) => console.error("🗺️  Auto prize breakdown generation error:", err.message));
 
     // ✅ Step 3: Fire independent background tasks (DON'T AWAIT)
     // This allows both to run in parallel without blocking the response

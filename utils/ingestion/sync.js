@@ -4,6 +4,7 @@ import { getPostByCategoryAndDate, createPost, updatePost } from "../../models/p
 import { createSyncLog } from "../../models/syncLogModel.js";
 import { GAME_NAMES, generateSeoFields } from "../../utils/seoService.js";
 import { bustSitemapCache } from "../../utils/sitemapService.js";
+import { autoGeneratePrizeBreakdowns } from "../prizeBreakdownService.js";
 
 export class IngestionSyncEngine {
   constructor() {
@@ -50,6 +51,7 @@ export class IngestionSyncEngine {
       updated: 0,
       duplicates: 0,
       corrections: 0,
+      prizeBreakdownsGenerated: 0,
       errors: [],
       details: [],
       durationMs: 0,
@@ -130,6 +132,19 @@ export class IngestionSyncEngine {
               drawDetails.metaAutoFilled = true;
               console.log(`[Sync Engine] Created post for ${cat} on ${normalized.drawDate} with ID: ${result.id}`);
               bustSitemapCache();
+
+              // Auto-generate the static prize-tier skeleton for the new draw.
+              // Best-effort: never throws, so a failure cannot undo the post save.
+              const prizeReport = await autoGeneratePrizeBreakdowns({
+                postId: result.id,
+                category: cat,
+                post: {
+                  midday_winnings: normalized.middayWinningNumbers,
+                  evening_winnings: normalized.eveningWinningNumbers
+                }
+              });
+              drawDetails.prizeBreakdownsGenerated = prizeReport.generated || 0;
+              report.prizeBreakdownsGenerated += prizeReport.generated || 0;
             }
             report.created++;
             drawDetails.status = "created";
