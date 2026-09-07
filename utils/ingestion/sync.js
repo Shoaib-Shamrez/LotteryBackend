@@ -5,6 +5,7 @@ import { createSyncLog } from "../../models/syncLogModel.js";
 import { GAME_NAMES, generateSeoFields } from "../../utils/seoService.js";
 import { bustSitemapCache } from "../../utils/sitemapService.js";
 import { autoGeneratePrizeBreakdowns } from "../prizeBreakdownService.js";
+import { triggerLiveSubscriberNotifications } from "../../utils/emailService.js";
 
 export class IngestionSyncEngine {
   constructor() {
@@ -181,6 +182,14 @@ export class IngestionSyncEngine {
                   evening_winnings: normalized.eveningWinningNumbers
                 }
               });
+              // Trigger live subscriber notifications (fire-and-forget, best-effort)
+              triggerLiveSubscriberNotifications({
+                category: cat,
+                date: normalized.drawDate,
+                title,
+                description
+              }).catch((err) => console.error("[Sync Engine] Live subscriber notification trigger error:", err.message));
+
               drawDetails.prizeBreakdownsGenerated = prizeReport.generated || 0;
               report.prizeBreakdownsGenerated += prizeReport.generated || 0;
             }

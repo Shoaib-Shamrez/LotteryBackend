@@ -17,6 +17,8 @@ const createTransporter = () => {
 // Email template for new post notification
 const createEmailTemplate = (post, postUrl, subscriberName) => {
   const { title, category, date, description } = post;
+  const baseUrl = (process.env.APP_URL || process.env.BASE_URL || "https://nylotteryresults.com").replace(/\/$/, "");
+  const unsubscribeUrl = `${baseUrl}/unsubscribe`;
 
   return {
     subject: `🎰 New ${category} Results - ${title}`,
@@ -81,7 +83,7 @@ const createEmailTemplate = (post, postUrl, subscriberName) => {
           <div class="footer">
             <p>You received this email because you subscribed to lottery results updates.</p>
             <p style="margin-top: 10px;">
-              <a href="http://localhost:3000/unsubscribe" style="color: #666;">Unsubscribe</a>
+              <a href="${unsubscribeUrl}" style="color: #666;">Unsubscribe</a>
             </p>
           </div>
         </div>
@@ -103,9 +105,23 @@ ${description || ""}
 View full results: ${postUrl}
 
 You received this email because you subscribed to lottery results updates.
-Unsubscribe: http://localhost:3000/unsubscribe
+Unsubscribe: ${unsubscribeUrl}
     `,
   };
+};
+
+/**
+ * Masks an email address for privacy-safe logging (e.g. "alice@example.com" -> "a***e@example.com").
+ * @param {string} email
+ * @returns {string} Masked email
+ */
+export const maskEmail = (email) => {
+  if (!email || typeof email !== "string" || !email.includes("@")) return "***";
+  const [local, domain] = email.split("@");
+  if (local.length <= 2) {
+    return `${local[0] || "*"}***@${domain}`;
+  }
+  return `${local[0]}***${local[local.length - 1]}@${domain}`;
 };
 
 // Send email to a single subscriber
@@ -123,11 +139,11 @@ const sendEmailToSubscriber = async (subscriber, post, postUrl) => {
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✓ Email sent to ${subscriber.email}: ${info.messageId}`);
+    console.log(`✓ Email sent to ${maskEmail(subscriber.email)}: ${info.messageId}`);
     return { success: true, email: subscriber.email };
   } catch (error) {
     console.error(
-      `✗ Failed to send email to ${subscriber.email}:`,
+      `✗ Failed to send email to ${maskEmail(subscriber.email)}:`,
       error.message
     );
     return { success: false, email: subscriber.email, error: error.message };
@@ -181,6 +197,61 @@ export const sendPostNotificationEmails = async (
   console.log(`   ✗ Failed: ${results.failed}/${results.total}\n`);
 
   return results;
+};
+
+/**
+ * Triggers live subscriber notifications for a newly created draw post.
+ * Non-blocking, fire-and-forget, best-effort. Will not throw or interrupt caller.
+ *
+ * @param {Object} opts
+ * @param {string} opts.category
+ * @param {string} opts.date
+ * @param {string} [opts.title]
+ * @param {string} [opts.description]
+ * @returns {Promise<void>}
+ */
+export const triggerLiveSubscriberNotifications = async ({
+  category,
+  date,
+  title,
+  description
+}) => {
+  try {
+    const { getAllSubscribers } = await import("../models/subscriberModel.js");
+    const subscribers = await getAllSubscribers().catch((err) => {
+      console.warn("[Live Notifications] Could not fetch subscribers:", err.message);
+      return [];
+    });
+
+    if (!subscribers || subscribers.length === 0) {
+      console.log(`[Live Notifications] No subscribers found for ${category} draw on ${date}`);
+      return;
+    }
+
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.warn("[Live Notifications] Email credentials (EMAIL_USER / EMAIL_PASS) not configured. Skipping notifications.");
+      return;
+    }
+
+    const baseUrl = (process.env.APP_URL || process.env.BASE_URL || "https://nylotteryresults.com").replace(/\/$/, "");
+    const formattedDate = new Date(date).toISOString().split("T")[0];
+    const categorySlug = category.toLowerCase().replace(/\s+/g, "-");
+    const postUrl = `${baseUrl}/${categorySlug}/results/${formattedDate}`;
+
+    const postData = {
+      title: title || `${category} Results for ${date}`,
+      category,
+      date,
+      description: description || `Check the latest winning numbers for ${category} drawing on ${date}.`
+    };
+
+    // Fire and forget - don't await blocking execution
+    sendPostNotificationEmails(postData, subscribers, postUrl).catch((err) => {
+      console.error("[Live Notifications] Email dispatch error:", err.message);
+    });
+  } catch (err) {
+    console.error("[Live Notifications] Unexpected error:", err.message);
+  }
 };
 
 // Test email configuration
