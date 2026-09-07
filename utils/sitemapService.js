@@ -85,7 +85,13 @@ ${postEntries}
  * @param {string} opts.baseUrl
  */
 export async function getDynamicSitemap({ pool, baseUrl } = {}) {
-  const resolvedBaseUrl = baseUrl || process.env.BASE_URL || "http://localhost:3000";
+  // Resolve the base URL for sitemap entries.
+  // Order of precedence: explicit argument > BASE_URL env > APP_URL env > canonical domain.
+  const resolvedBaseUrl =
+    baseUrl ||
+    process.env.BASE_URL ||
+    process.env.APP_URL ||
+    "https://nylotteryresults.com";
   const now = Date.now();
   if (
     sitemapCache &&
@@ -112,7 +118,7 @@ export async function getDynamicSitemap({ pool, baseUrl } = {}) {
 
 // Generate sitemap URL for a post
 const generatePostUrl = (post) => {
-  const baseUrl = process.env.BASE_URL || "http://localhost:3000";
+  const baseUrl = process.env.BASE_URL || process.env.APP_URL || "https://nylotteryresults.com";
   const { category, date } = post;
 
   // Format: domain.com/categoryName/dateofpost
