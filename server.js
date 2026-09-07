@@ -33,29 +33,35 @@ dotenv.config();
 const app = express();
 
 // Middleware
-const ALLOWED_ORIGINS = (process.env.ADMIN_FRONTEND_ORIGINS ||
-  "http://localhost:5173,http://localhost:3000")
+const ALLOWED_ORIGINS = (
+  process.env.FRONTEND_URL || "http://localhost:5173,http://localhost:3000"
+)
   .split(",")
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
 
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // same-origin / curl / server-to-server
-    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-    return cb(null, false);
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  maxAge: 86400
-}));
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // same-origin / curl / server-to-server
+      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      return cb(null, false);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    maxAge: 86400,
+  }),
+);
 app.use(express.json());
 app.set("trust proxy", true);
 
 // Robots.txt route - dynamic / static output pointing to sitemap.xml
 app.get("/robots.txt", (req, res) => {
-  const domain = process.env.APP_URL || process.env.BASE_URL || "https://nylotteryresults.com";
+  const domain =
+    process.env.FRONTEND_URL ||
+    process.env.BASE_URL ||
+    "https://nylotteryresults.com";
   const content = `User-agent: *\nAllow: /\n\nSitemap: ${domain.replace(/\/$/, "")}/sitemap.xml\n`;
   res.type("text/plain").send(content);
 });
@@ -69,7 +75,10 @@ app.get("/sitemap.xml", async (req, res) => {
     res.type("application/xml").send(xml);
   } catch (err) {
     console.error("Sitemap dynamic fetch failed:", err.message);
-    res.status(500).type("text/plain").send(`Sitemap generation failed: ${err.message}`);
+    res
+      .status(500)
+      .type("text/plain")
+      .send(`Sitemap generation failed: ${err.message}`);
   }
 });
 
@@ -95,7 +104,6 @@ app.use("/api/sitemaps", SitemapRoute);
 app.use("/api/sync", syncRoutes);
 app.use("/api/admin/sync", adminSyncRoutes);
 
-
 app.get("/api/test-email", async (req, res) => {
   const isValid = await testEmailConfig();
   res.json({ valid: isValid });
@@ -118,8 +126,11 @@ if (process.env.NODE_ENV !== "test") {
     // HTTP API stays available even if the scheduler never starts.
     try {
       const { startScheduler } = await import("./utils/scheduler.js");
-      const { runScheduledForCategory } = await import("./controllers/syncRunController.js");
-      const schedulerController = await startScheduler({ runFor: runScheduledForCategory });
+      const { runScheduledForCategory } =
+        await import("./controllers/syncRunController.js");
+      const schedulerController = await startScheduler({
+        runFor: runScheduledForCategory,
+      });
       // Register the scheduler controller so health/scheduler-status
       // endpoints can query it via utils/schedulerStatus.js.
       // The scheduler itself is NOT duplicated, NOT re-created.
