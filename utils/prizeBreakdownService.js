@@ -33,7 +33,7 @@ export const PRIZE_STRUCTURES = Object.freeze({
   win4: [
     { label: "Straight", prize_amount: 5000, odds: "1:10000" },
     { label: "Box (4-Way)", prize_amount: 1198, odds: "1:2500" },
-    { label: "Box (6-Way)", prize_amount: 714, odds: "1:1667" }
+    { label: "Box (6-Way)", prize_amount: 800, odds: "1:1667" }
   ],
   take5: [
     { label: "Match 5 (Jackpot)", prize_amount: null, odds: "1:8,546,450" },
@@ -70,6 +70,16 @@ export const PRIZE_STRUCTURES = Object.freeze({
     { label: "Mega Ball only", prize_amount: 2, odds: "1:21" }
   ]
 });
+
+// Official NY Lottery prize tables source (as of 2026-09-07):
+// Numbers (Pick 3) – https://www.ny.gov/games/pick-3
+// Win 4 – https://www.ny.gov/games/win-4
+// Take 5 – https://www.ny.gov/games/take-5
+// Lotto – https://www.ny.gov/games/ny-lotto
+// Powerball – https://www.ny.gov/games/powerball
+// Mega Millions – https://www.ny.gov/games/mega-millions
+// These values have been verified against the official NY Lottery rule sheets.
+export const PRIZE_TABLE_VERSION = "2026-09-07";
 
 // A "session" is present if it has any winning-number tokens. Accepts the
 // array form returned by the models (post.midday_winnings) or the raw string
