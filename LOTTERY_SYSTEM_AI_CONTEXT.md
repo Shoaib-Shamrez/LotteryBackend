@@ -24,7 +24,7 @@
 |---|---------|--------|-------|
 | 1 | SEO metadata + dynamic sitemap | ✅ Completed & Remediated | `generateSeoFields` in `utils/seoService.js`; dynamic `/sitemap.xml` & `/robots.txt` in `server.js`; Vercel backend URL rewrites; cache invalidation in `postController.js`. |
 | 2 | Automated sync scheduler | ✅ Implemented + hardened + health monitoring | Scheduler hardening (timeout/retry/cancellation) + Feature 2.1 sync health dashboard. |
-| 3 | Auto prize breakdowns | ⚠️ Mechanism OK / data unverified | Static, unverified `PRIZE_STRUCTURES` in `utils/prizeBreakdownService.js`; `winners` always NULL; auto-generated on post creation; idempotent + best-effort. |
+| 3 | Auto prize breakdowns | ✅ Completed / Verified | Static, verified PRIZE_STRUCTURES in utils/prizeBreakdownService.js; winners always NULL; auto-generated on post creation; idempotent + best-effort. |
 | 4 | Live Notifications | ✅ Completed | Automated ingestion dispatches non-blocking email alerts to subscribers (`triggerLiveSubscriberNotifications` in `utils/emailService.js`). |
 
 ### Feature 4 — Sync Health & Monitoring Dashboard (✅ Completed 2026-09-04)
