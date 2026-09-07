@@ -27,6 +27,7 @@ import siteRoutes from "./routes/siteRoutes.js";
 
 import syncRoutes from "./routes/syncRoutes.js";
 import adminSyncRoutes from "./routes/adminSyncRoutes.js";
+import { setSchedulerController } from "./utils/schedulerStatus.js";
 
 dotenv.config();
 const app = express();
@@ -52,20 +53,23 @@ app.use(cors({
 app.use(express.json());
 app.set("trust proxy", true);
 
+// Robots.txt route - dynamic / static output pointing to sitemap.xml
+app.get("/robots.txt", (req, res) => {
+  const domain = process.env.APP_URL || process.env.BASE_URL || "https://nylotteryresults.com";
+  const content = `User-agent: *\nAllow: /\n\nSitemap: ${domain.replace(/\/$/, "")}/sitemap.xml\n`;
+  res.type("text/plain").send(content);
+});
+
 // Sitemap route - dynamic, served from the database.
 // MUST be registered BEFORE express.static so it intercepts /sitemap.xml
-// instead of serving public/sitemap.xml.
 app.get("/sitemap.xml", async (req, res) => {
   try {
     const { getDynamicSitemap } = await import("./utils/sitemapService.js");
     const { xml } = await getDynamicSitemap({ baseUrl: process.env.BASE_URL });
     res.type("application/xml").send(xml);
   } catch (err) {
-    console.error("Sitemap dynamic fetch failed, falling back to static file:", err.message);
-    const sitemapPath = path.join(__dirname, "public", "sitemap.xml");
-    res.sendFile(sitemapPath, (sendErr) => {
-      if (sendErr) res.status(500).send("Sitemap unavailable");
-    });
+    console.error("Sitemap dynamic fetch failed:", err.message);
+    res.status(500).type("text/plain").send(`Sitemap generation failed: ${err.message}`);
   }
 });
 
@@ -115,7 +119,11 @@ if (process.env.NODE_ENV !== "test") {
     try {
       const { startScheduler } = await import("./utils/scheduler.js");
       const { runScheduledForCategory } = await import("./controllers/syncRunController.js");
-      await startScheduler({ runFor: runScheduledForCategory });
+      const schedulerController = await startScheduler({ runFor: runScheduledForCategory });
+      // Register the scheduler controller so health/scheduler-status
+      // endpoints can query it via utils/schedulerStatus.js.
+      // The scheduler itself is NOT duplicated, NOT re-created.
+      setSchedulerController(schedulerController);
     } catch (err) {
       console.error("[Scheduler] failed to initialize:", err.message);
     }

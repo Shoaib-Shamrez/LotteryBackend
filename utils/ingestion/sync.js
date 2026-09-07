@@ -36,9 +36,13 @@ export class IngestionSyncEngine {
    * @param {string} [date]
    * @param {boolean} [dryRun=false]
    * @param {number|null} [runId=null]  Optional parent sync_run id.
+   * @param {AbortSignal} [signal]  Optional abort signal (scheduled runs use
+   *   this so that a run-deadline timeout can prevent unsafe late DB writes
+   *   such as sync_logs, post create/update, or prize breakdowns). Manual/retry
+   *   runs pass no signal.
    * @returns {Promise<Object>} Execution report (with logId).
    */
-  async syncSingle(category, date, dryRun = false, runId = null) {
+  async syncSingle(category, date, dryRun = false, runId = null, signal) {
     const startTime = Date.now();
     const cat = category.toLowerCase();
     const report = {
@@ -60,25 +64,46 @@ export class IngestionSyncEngine {
 
     console.log(`[Sync Engine] Starting sync for category: ${cat}, date: ${date || "latest"}${dryRun ? " (DRY RUN)" : ""}`);
 
+    const aborted = () => signal && signal.aborted;
+
     try {
       const rawRecords = await this.provider.fetchRawResults(cat, date);
       report.fetched = rawRecords.length;
+
+      // After provider fetch returns, check whether the run-deadline has
+      // already expired before performing ANY database writes.
+      if (aborted()) {
+        report.success = false;
+        report.errors.push("Sync aborted before DB writes (run deadline exceeded)");
+        report.durationMs = Date.now() - startTime;
+        return report;
+      }
 
       // Handle empty provider result
       if (report.fetched === 0) {
         report.message = "No draws found for the requested category/date";
         report.durationMs = Date.now() - startTime;
-        // Persist sync log for empty result
-        try {
-          const logId = await createSyncLog(report, runId);
-          report.logId = logId;
-        } catch (logErr) {
-          console.error('[Sync Engine] Failed to persist sync log (empty result):', logErr);
+        if (!aborted()) {
+          // Persist sync log for empty result
+          try {
+            const logId = await createSyncLog(report, runId);
+            report.logId = logId;
+          } catch (logErr) {
+            console.error('[Sync Engine] Failed to persist sync log (empty result):', logErr);
+          }
         }
         return report;
       }
 
       for (const raw of rawRecords) {
+        // Check abort signal at the top of each record iteration so we bail
+        // before any further DB writes once the run-deadline fires.
+        if (aborted()) {
+          report.success = false;
+          report.errors.push("Sync aborted mid-iteration (run deadline exceeded)");
+          break;
+        }
+
         const drawDetails = {
           date: null,
           status: "processed",
@@ -107,6 +132,12 @@ export class IngestionSyncEngine {
           if (!existing) {
             // Create new record
             if (!dryRun) {
+              // Check before createPost (DB write)
+              if (aborted()) {
+                report.success = false;
+                report.errors.push("Sync aborted before post create (run deadline exceeded)");
+                break;
+              }
               const title = `${GAME_NAMES[cat]} Results for ${this.formatReadableDate(normalized.drawDate)}`;
               const description = `Check the winning numbers for ${GAME_NAMES[cat]} drawing on ${normalized.drawDate}.`;
               const { metaTitle, metaDescription } = generateSeoFields({
@@ -132,6 +163,13 @@ export class IngestionSyncEngine {
               drawDetails.metaAutoFilled = true;
               console.log(`[Sync Engine] Created post for ${cat} on ${normalized.drawDate} with ID: ${result.id}`);
               bustSitemapCache();
+
+              // Check before prize breakdown generation (DB write)
+              if (aborted()) {
+                report.success = false;
+                report.errors.push("Sync aborted before prize breakdown (run deadline exceeded)");
+                break;
+              }
 
               // Auto-generate the static prize-tier skeleton for the new draw.
               // Best-effort: never throws, so a failure cannot undo the post save.
@@ -183,6 +221,12 @@ export class IngestionSyncEngine {
               } else {
                 // Merge session winnings (e.g. DB had Midday, API brings Evening)
                 if (!dryRun) {
+                  // Check before updatePost (DB write)
+                  if (aborted()) {
+                    report.success = false;
+                    report.errors.push("Sync aborted before post update (run deadline exceeded)");
+                    break;
+                  }
                   const updatedPostData = {
                     title: existing.title,
                     category: existing.category,
@@ -220,12 +264,20 @@ export class IngestionSyncEngine {
     }
 
     report.durationMs = Date.now() - startTime;
-    // Persist sync log (both success and failure)
-    try {
-      const logId = await createSyncLog(report, runId);
-      report.logId = logId;
-    } catch (logErr) {
-      console.error('[Sync Engine] Failed to persist sync log:', logErr);
+
+    // Check abort signal before the final sync_log write so we never create
+    // a sync_logs row after the run has been finalized as timed-out/failed.
+    if (aborted()) {
+      report.success = false;
+      report.errors.push("Sync aborted before final sync_log (run deadline exceeded)");
+    } else {
+      // Persist sync log (both success and failure)
+      try {
+        const logId = await createSyncLog(report, runId);
+        report.logId = logId;
+      } catch (logErr) {
+        console.error('[Sync Engine] Failed to persist sync log:', logErr);
+      }
     }
     return report;
   }

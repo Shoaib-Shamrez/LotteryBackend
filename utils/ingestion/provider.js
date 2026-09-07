@@ -1,4 +1,5 @@
 // Provider mapping for NY Open Data (Socrata API)
+import { fetchJsonWithTimeout, withRetry, loadProviderConfig } from "./providerHttp.js";
 
 const DATASETS = {
   numbers: "hsys-3def",
@@ -36,19 +37,39 @@ export class NYOpenDataProvider {
     }
 
     url = `${url}?${params.toString()}`;
-    if (process.env.NODE_ENV !== 'production') console.log(`[Sync Provider] Fetching URL: ${url}`);
 
-    const res = await fetch(url, {
-      headers: {
-        "Accept": "application/json"
+    // Hardened fetch+parse: the entire provider response — fetch headers AND
+    // response.json() body consumption — is bounded by a single deadline via
+    // fetchJsonWithTimeout. The whole operation (including body parsing) is
+    // retried with bounded exponential backoff (withRetry). Permanent failures
+    // (4xx, malformed JSON / SyntaxError, validation/config errors) are NOT
+    // retried. Config is driven by SYNC_PROVIDER_TIMEOUT_MS / SYNC_MAX_RETRIES
+    // / SYNC_RETRY_DELAY_MS and validated with safe defaults.
+    const cfg = loadProviderConfig();
+
+    const data = await withRetry(
+      async (attemptIndex, label) => {
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[Sync Provider] (${label}) Fetching URL: ${url}`);
+        }
+        return await fetchJsonWithTimeout(
+          url,
+          { headers: { Accept: "application/json" } },
+          cfg.providerTimeoutMs
+        );
+      },
+      {
+        maxRetries: cfg.maxRetries,
+        baseDelayMs: cfg.retryDelayMs,
+        onRetry: (err, retryNumber, delayMs) => {
+          console.warn(
+            `[Sync Provider] Attempt ${retryNumber} for ${category} failed: ${err.message || err.name}. Retrying in ${delayMs}ms...`
+          );
+        }
       }
-    });
+    );
 
-    if (!res.ok) {
-      throw new Error(`HTTP error fetching results: ${res.status} ${res.statusText}`);
-    }
-
-    return await res.json();
+    return data;
   }
 
   /**

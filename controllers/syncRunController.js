@@ -10,11 +10,15 @@
 
 import { IngestionSyncEngine } from "../utils/ingestion/sync.js";
 import { IngestionValidator } from "../utils/ingestion/validator.js";
+import { withTimeoutAbortable, loadProviderConfig } from "../utils/ingestion/providerHttp.js";
+import { getSchedulerStatus } from "../utils/schedulerStatus.js";
+import { sanitizeErrorMessage } from "../utils/sanitizeError.js";
 import {
   createSyncRun,
   updateSyncRun,
   getSyncRunById,
-  listSyncRuns
+  listSyncRuns,
+  getSyncRunStats
 } from "../models/syncRunModel.js";
 import { getSyncLogsByRunId } from "../models/syncLogModel.js";
 import { getPostById, updatePost } from "../models/postModel.js";
@@ -65,16 +69,48 @@ function isoDateRange(startDate, endDate) {
  *
  * Exported so the scheduler can reuse the exact same lifecycle.
  */
-export async function executeRun({ runId, category, dates, dryRun }) {
+export async function executeRun({ runId, category, dates, dryRun, timeoutMs }) {
   const perDate = [];
   const aggregatedErrors = [];
   let allSuccess = true;
 
+  // Optional per-run deadline (applied to scheduled runs). A single scheduled
+  // operation must never remain stuck indefinitely. Manual/retry runs omit
+  // timeoutMs, preserving their existing (unbounded) behavior.
+  const hasDeadline = Number.isFinite(timeoutMs) && timeoutMs > 0;
+  const deadline = hasDeadline ? Date.now() + timeoutMs : null;
+
   for (const date of dates) {
+    if (hasDeadline && Date.now() >= deadline) {
+      aggregatedErrors.push(`Run deadline (${timeoutMs}ms) exceeded before ${category}/${date}`);
+      allSuccess = false;
+      perDate.push({ date, logId: null, success: false, deadlineExceeded: true });
+      break;
+    }
+
     let report;
     try {
-      report = await engine.syncSingle(category, date, !!dryRun, runId);
+      if (hasDeadline) {
+        // Use withTimeoutAbortable so that on deadline expiration an AbortSignal
+        // is sent into syncSingle, giving it a chance to bail out of DB writes
+        // (sync_logs / posts / prize breakdowns) before the run is finalized.
+        // Manual/retry paths omit timeoutMs -> no signal, behavior unchanged.
+        const remaining = Math.max(1, deadline - Date.now());
+        report = await withTimeoutAbortable(
+          (signal) => engine.syncSingle(category, date, !!dryRun, runId, signal),
+          remaining,
+          `Scheduled sync for ${category}/${date} exceeded run deadline of ${timeoutMs}ms`
+        );
+      } else {
+        report = await engine.syncSingle(category, date, !!dryRun, runId);
+      }
     } catch (err) {
+      if (err && err.name === "TimeoutError") {
+        aggregatedErrors.push(`Run deadline (${timeoutMs}ms) exceeded for ${category}/${date}`);
+        allSuccess = false;
+        perDate.push({ date, logId: null, success: false, error: err.message });
+        break; // deadline exceeded -> stop processing further dates for this run
+      }
       aggregatedErrors.push(`[${date}] ${err.message}`);
       allSuccess = false;
       perDate.push({ date, logId: null, success: false, error: err.message });
@@ -141,7 +177,7 @@ export async function runScheduledForCategory(category, date) {
     console.error(`[Scheduler] createSyncRun failed for ${category}/${date}:`, err.message);
     return null;
   }
-  return executeRun({ runId, category, dates: [date], dryRun: false });
+  return executeRun({ runId, category, dates: [date], dryRun: false, timeoutMs: loadProviderConfig().tickTimeoutMs });
 }
 
 // ---------- HTTP handlers ----------
@@ -391,4 +427,125 @@ export async function overrideDrawHandler(req, res) {
 
   const run = await getSyncRunById(runId);
   return res.status(200).json({ success: true, postId: post.id, runId, run });
+}
+
+/**
+ * GET /api/admin/sync/health
+ *
+ * Returns aggregate sync health statistics and scheduler status in a single
+ * response so the dashboard can render without multiple requests.
+ *
+ * Response shape:
+ * {
+ *   success: true,
+ *   health: {
+ *     lastRun: { ...sync_run row } | null,
+ *     recentRuns: [ ...up to 5 sync_run rows ],
+ *     totalRuns,
+ *     successfulRuns,
+ *     failedRuns,
+ *     pendingRuns,
+ *     successRate,        // percentage, 2 decimals; 0 if no completed runs
+ *     failures24h,
+ *     failures7d,
+ *     lastError,          // sanitized or null
+ *     scheduler: { started, running, active, initialized, cron, categories, lastError }
+ *   }
+ * }
+ *
+ * Success rate = successfulRuns / (successfulRuns + failedRuns) * 100.
+ * Pending runs (end_time IS NULL) are excluded from the rate.
+ */
+export async function healthHandler(req, res) {
+  try {
+    const { stats, lastRun } = await getSyncRunStats();
+
+    const statsMap = stats || {};
+    const totalRuns = Number(statsMap.total_runs) || 0;
+    const successfulRuns = Number(statsMap.successful_runs) || 0;
+    const failedRuns = Number(statsMap.failed_runs) || 0;
+    const pendingRuns = Number(statsMap.pending_runs) || 0;
+    const successRate = Number(statsMap.success_rate) || 0;
+    const failures24h = Number(statsMap.failures_24h) || 0;
+    const failures7d = Number(statsMap.failures_7d) || 0;
+
+    // Extract last error from the most recent failed run (already fetched as
+    // lastRun). Also fetch recent runs for the summary list.
+    const recentRuns = await listSyncRuns({ limit: 5 });
+
+    let lastError = null;
+    if (lastRun && lastRun.errors) {
+      try {
+        const errs = typeof lastRun.errors === "string" ? JSON.parse(lastRun.errors) : lastRun.errors;
+        if (Array.isArray(errs) && errs.length > 0) {
+          lastError = sanitizeErrorMessage(errs[errs.length - 1]);
+        }
+      } catch {
+        lastError = null;
+      }
+    }
+
+    const scheduler = getSchedulerStatus();
+
+    return res.status(200).json({
+      success: true,
+      health: {
+        lastRun: lastRun
+          ? {
+              id: lastRun.id,
+              category: lastRun.category,
+              triggered_by: lastRun.triggered_by,
+              start_time: lastRun.start_time,
+              end_time: lastRun.end_time,
+              success: lastRun.success,
+              dry_run: lastRun.dry_run,
+              start_date: lastRun.start_date,
+              end_date: lastRun.end_date
+            }
+          : null,
+        recentRuns: recentRuns.map((r) => ({
+          id: r.id,
+          category: r.category,
+          triggered_by: r.triggered_by,
+          start_time: r.start_time,
+          end_time: r.end_time,
+          success: r.success,
+          dry_run: r.dry_run,
+          start_date: r.start_date,
+          end_date: r.end_date
+        })),
+        totalRuns,
+        successfulRuns,
+        failedRuns,
+        pendingRuns,
+        successRate,
+        failures24h,
+        failures7d,
+        lastError,
+        scheduler
+      }
+    });
+  } catch (err) {
+    console.error("[AdminSync] health error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+/**
+ * GET /api/admin/sync/scheduler-status
+ *
+ * Returns the current scheduler controller status.
+ * See utils/schedulerStatus.js for field definitions.
+ */
+export async function schedulerStatusHandler(req, res) {
+  try {
+    const scheduler = getSchedulerStatus();
+    return res.status(200).json({
+      success: true,
+      scheduler
+    });
+  } catch (err) {
+    console.error("[AdminSync] scheduler-status error:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 }

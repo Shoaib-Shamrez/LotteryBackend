@@ -120,3 +120,59 @@ export async function listSyncRuns(filter = {}) {
     client.release();
   }
 }
+
+/**
+ * Aggregate health statistics for all sync_runs.
+ *
+ * Uses SQL conditional aggregation in a single query — no large row loads.
+ *
+ * Definitions:
+ * - total_runs:     ALL rows in sync_runs (pending + success + failed)
+ * - successful_runs: rows where success = TRUE
+ * - failed_runs:     rows where success = FALSE
+ * - pending_runs:    rows where end_time IS NULL (still running)
+ * - success_rate:    successful_runs / (successful_runs + failed_runs) * 100
+ *                    (pending runs excluded from the rate — they have no
+ *                     terminal success/failure yet)
+ * - failures_24h:    rows where success = FALSE AND end_time >= NOW() - 24h
+ * - failures_7d:     rows where success = FALSE AND end_time >= NOW() - 7d
+ *
+ * Also returns the most recent run (ORDER BY start_time DESC LIMIT 1)
+ * as `lastRun`.
+ *
+ * @returns {Promise<{stats: Object, lastRun: Object|null}>}
+ */
+export async function getSyncRunStats() {
+  const client = await pool.connect();
+  try {
+    const statsRes = await client.query(
+      `SELECT
+         COUNT(*) AS total_runs,
+         COUNT(CASE WHEN success = TRUE THEN 1 END) AS successful_runs,
+         COUNT(CASE WHEN success = FALSE THEN 1 END) AS failed_runs,
+         COUNT(CASE WHEN end_time IS NULL THEN 1 END) AS pending_runs,
+         ROUND(
+           CASE
+             WHEN COUNT(CASE WHEN end_time IS NOT NULL THEN 1 END) > 0
+             THEN COUNT(CASE WHEN success = TRUE THEN 1 END)::numeric
+                  / COUNT(CASE WHEN end_time IS NOT NULL THEN 1 END) * 100
+             ELSE 0
+           END, 2
+         ) AS success_rate,
+         COUNT(CASE WHEN success = FALSE AND end_time >= NOW() - INTERVAL '24 hours' THEN 1 END) AS failures_24h,
+         COUNT(CASE WHEN success = FALSE AND end_time >= NOW() - INTERVAL '7 days' THEN 1 END) AS failures_7d
+       FROM sync_runs`
+    );
+
+    const lastRunRes = await client.query(
+      `SELECT * FROM sync_runs ORDER BY start_time DESC LIMIT 1`
+    );
+
+    return {
+      stats: statsRes.rows[0] || null,
+      lastRun: lastRunRes.rows[0] || null
+    };
+  } finally {
+    client.release();
+  }
+}

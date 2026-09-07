@@ -6,7 +6,9 @@ import {
   getRunHandler,
   manualRunHandler,
   retryRunHandler,
-  overrideDrawHandler
+  overrideDrawHandler,
+  healthHandler,
+  schedulerStatusHandler
 } from "../controllers/syncRunController.js";
 
 const router = express.Router();
@@ -18,5 +20,7 @@ router.get("/runs/:id", getRunHandler);
 router.post("/runs", manualRunHandler);
 router.post("/runs/:id/retry", retryRunHandler);
 router.patch("/draw/:postId/override", overrideDrawHandler);
+router.get("/health", healthHandler);
+router.get("/scheduler-status", schedulerStatusHandler);
 
 export default router;
