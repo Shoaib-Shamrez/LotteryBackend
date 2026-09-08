@@ -15,6 +15,7 @@ import {
   getlatestposts,
   getSinglePostbyCatAndDte,
 } from "../controllers/postController.js";
+import { exportCsvHandler } from "../controllers/exportCsvController.js";
 
 const router = express.Router();
 
@@ -23,6 +24,7 @@ router.get("/recent", getlatestposts);
 router.get("/n", getPostsNumber);
 router.get("/category", getCategories);
 router.get("/category/n", getCategoriesNum);
+router.get("/:id/export", exportCsvHandler);
 router.get("/id/:id", getSinglePost);
 router.get("/all/:category", getAlllatPostsbyCat);
 router.get("/midday/:category", getallmiddaybycat);
