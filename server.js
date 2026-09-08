@@ -59,8 +59,8 @@ app.set("trust proxy", true);
 // Robots.txt route - dynamic / static output pointing to sitemap.xml
 app.get("/robots.txt", (req, res) => {
   const domain =
-    process.env.FRONTEND_URL ||
     process.env.BASE_URL ||
+    process.env.APP_URL ||
     "https://nylotteryresults.com";
   const content = `User-agent: *\nAllow: /\n\nSitemap: ${domain.replace(/\/$/, "")}/sitemap.xml\n`;
   res.type("text/plain").send(content);
@@ -71,7 +71,7 @@ app.get("/robots.txt", (req, res) => {
 app.get("/sitemap.xml", async (req, res) => {
   try {
     const { getDynamicSitemap } = await import("./utils/sitemapService.js");
-    const { xml } = await getDynamicSitemap({ baseUrl: process.env.BASE_URL });
+    const { xml } = await getDynamicSitemap({ baseUrl: process.env.APP_URL || process.env.BASE_URL || process.env.FRONTEND_URL });
     res.type("application/xml").send(xml);
   } catch (err) {
     console.error("Sitemap dynamic fetch failed:", err.message);
