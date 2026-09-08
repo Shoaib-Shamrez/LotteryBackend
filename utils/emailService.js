@@ -17,7 +17,7 @@ const createTransporter = () => {
 // Email template for new post notification
 const createEmailTemplate = (post, postUrl, subscriberName) => {
   const { title, category, date, description } = post;
-  const baseUrl = (process.env.APP_URL || process.env.BASE_URL || "https://nylotteryresults.com").replace(/\/$/, "");
+  const baseUrl = (process.env.APP_URL || "https://nylotteryresults.com").replace(/\/$/, "");
   const unsubscribeUrl = `${baseUrl}/unsubscribe`;
 
   return {
@@ -233,7 +233,7 @@ export const triggerLiveSubscriberNotifications = async ({
       return;
     }
 
-    const baseUrl = (process.env.APP_URL || process.env.BASE_URL || "https://nylotteryresults.com").replace(/\/$/, "");
+    const baseUrl = (process.env.APP_URL || "https://nylotteryresults.com").replace(/\/$/, "");
     const formattedDate = new Date(date).toISOString().split("T")[0];
     const categorySlug = category.toLowerCase().replace(/\s+/g, "-");
     const postUrl = `${baseUrl}/${categorySlug}/results/${formattedDate}`;

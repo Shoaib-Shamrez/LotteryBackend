@@ -20,7 +20,7 @@ import { bustSitemapCache, getDynamicSitemap } from "../utils/sitemapService.js"
 router.post("/sync-sitemap", async (req, res) => {
   try {
     bustSitemapCache();
-    const { xml, count } = await getDynamicSitemap({ baseUrl: process.env.BASE_URL }).catch(() => ({ xml: "", count: 0 }));
+    const { xml, count } = await getDynamicSitemap({ baseUrl: process.env.APP_URL }).catch(() => ({ xml: "", count: 0 }));
 
     // Optional copy to local public directory if present
     const backendSitemapPath = path.join(__dirname, "../public/sitemap.xml");

@@ -253,7 +253,7 @@ export const addPost = async (req, res) => {
     console.log(`✓ Post created successfully! ID: ${postId}\n`);
 
     // Step 3: Generate post URL
-    const baseUrl = process.env.BASE_URL || "http://localhost:3000";
+    const baseUrl = process.env.APP_URL || "https://nylotteryresults.com";
     const formattedDate = new Date(date).toISOString().split("T")[0];
     const categorySlug = category.toLowerCase().replace(/\s+/g, "-");
     const postUrl = `${baseUrl}/${categorySlug}/results/${formattedDate}`;

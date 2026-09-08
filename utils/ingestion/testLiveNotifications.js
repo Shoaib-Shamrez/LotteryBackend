@@ -19,10 +19,8 @@ async function testEmailTemplateFormatting() {
   console.log("Testing live notifications helper & template formatting...");
   // Backup env
   const origAppUrl = process.env.APP_URL;
-  const origBaseUrl = process.env.BASE_URL;
 
   process.env.APP_URL = "https://nylotteryresults.com";
-  process.env.BASE_URL = "https://nylotteryresults.com";
 
   // Triggering live notifications without configured SMTP must be safe & non-blocking
   let error = null;
@@ -42,7 +40,6 @@ async function testEmailTemplateFormatting() {
 
   // Restore env
   process.env.APP_URL = origAppUrl;
-  process.env.BASE_URL = origBaseUrl;
 }
 
 async function testBatchEmailDispatch() {

@@ -14,7 +14,7 @@ process.env.ADMIN_SESSION_SECRET =
   process.env.ADMIN_SESSION_SECRET || "test-session-secret-32-chars-minimum-xyz";
 process.env.ADMIN_FRONTEND_ORIGINS =
   process.env.ADMIN_FRONTEND_ORIGINS || "http://localhost:5173";
-process.env.BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+process.env.APP_URL = process.env.APP_URL || "https://nylotteryresults.com";
 
 import assert from "assert";
 import bcrypt from "bcrypt";
