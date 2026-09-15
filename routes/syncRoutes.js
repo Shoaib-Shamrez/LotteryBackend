@@ -57,6 +57,14 @@ router.post("/trigger", syncAuthMiddleware, async (req, res) => {
 
   try {
     const report = await engine.sync(category, date, isDryRun);
+    // If provider returned no records, indicate noData flag without error
+    if (report.fetched === 0) {
+      return res.status(200).json({
+        ...report,
+        noData: true,
+        message: "No draw data available for the requested date"
+      });
+    }
     if (!report.success) {
       return res.status(500).json(report);
     }

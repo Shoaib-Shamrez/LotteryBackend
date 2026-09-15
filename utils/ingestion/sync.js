@@ -1,16 +1,26 @@
 import { NYOpenDataProvider } from "./provider.js";
 import { IngestionValidator } from "./validator.js";
-import { getPostByCategoryAndDate, createPost, updatePost } from "../../models/postModel.js";
-import { createSyncLog } from "../../models/syncLogModel.js";
+import { getPostByCategoryAndDate as defaultGetPostByCategoryAndDate, createPost as defaultCreatePost, updatePost as defaultUpdatePost } from "../../models/postModel.js";
+import { createSyncLog as defaultCreateSyncLog } from "../../models/syncLogModel.js";
+import { autoGeneratePrizeBreakdowns as defaultAutoGeneratePrizeBreakdowns } from "../prizeBreakdownService.js";
+import { triggerLiveSubscriberNotifications as defaultTriggerLiveSubscriberNotifications } from "../../utils/emailService.js";
 import { GAME_NAMES, generateSeoFields } from "../../utils/seoService.js";
-import { bustSitemapCache } from "../../utils/sitemapService.js";
-import { autoGeneratePrizeBreakdowns } from "../prizeBreakdownService.js";
-import { triggerLiveSubscriberNotifications } from "../../utils/emailService.js";
+import { bustSitemapCache as defaultBustSitemapCache } from "../../utils/sitemapService.js";
+
+
 
 export class IngestionSyncEngine {
-  constructor() {
+  constructor(deps = {}) {
     this.provider = new NYOpenDataProvider();
     this.validator = new IngestionValidator();
+    const { getPostByCategoryAndDate, createPost, updatePost, autoGeneratePrizeBreakdowns, triggerLiveSubscriberNotifications, createSyncLog, bustSitemapCache } = deps;
+    this.getPostByCategoryAndDate = getPostByCategoryAndDate || defaultGetPostByCategoryAndDate;
+    this.createPost = createPost || defaultCreatePost;
+    this.updatePost = updatePost || defaultUpdatePost;
+    this.autoGeneratePrizeBreakdowns = autoGeneratePrizeBreakdowns || defaultAutoGeneratePrizeBreakdowns;
+    this.triggerLiveSubscriberNotifications = triggerLiveSubscriberNotifications || defaultTriggerLiveSubscriberNotifications;
+    this.createSyncLog = createSyncLog || defaultCreateSyncLog;
+    this.bustSitemapCache = bustSitemapCache || defaultBustSitemapCache;
   }
 
   /**
@@ -87,7 +97,7 @@ export class IngestionSyncEngine {
         if (!aborted()) {
           // Persist sync log for empty result
           try {
-            const logId = await createSyncLog(report, runId);
+            const logId = await this.createSyncLog(report, runId);
             report.logId = logId;
           } catch (logErr) {
             console.error('[Sync Engine] Failed to persist sync log (empty result):', logErr);
@@ -116,7 +126,17 @@ export class IngestionSyncEngine {
           const normalized = this.provider.normalize(cat, raw);
           drawDetails.date = normalized.drawDate;
 
-          // 2. Validate
+          // 2. Date safety: if a specific date was requested, ensure provider's date matches exactly
+          if (date && normalized.drawDate !== date) {
+            const msg = `Date mismatch: requested ${date} but provider returned ${normalized.drawDate}`;
+            report.errors.push(msg);
+            drawDetails.status = "date_mismatch";
+            drawDetails.errors.push(msg);
+            report.details.push(drawDetails);
+            continue;
+          }
+
+          // 3. Validate
           const validation = this.validator.validate(normalized);
           if (!validation.isValid) {
             report.errors.push(...validation.errors.map(err => `[Date: ${normalized.drawDate}] ${err}`));
@@ -128,7 +148,7 @@ export class IngestionSyncEngine {
           report.validated++;
 
           // 3. Lookup existing
-          const existing = await getPostByCategoryAndDate(normalized.drawDate, cat);
+          const existing = await this.getPostByCategoryAndDate(normalized.drawDate, cat);
 
           if (!existing) {
             // Create new record
@@ -149,7 +169,7 @@ export class IngestionSyncEngine {
                 title
               });
 
-              const result = await createPost(
+              const result = await this.createPost(
                 title,
                 cat,
                 "published",
@@ -163,7 +183,7 @@ export class IngestionSyncEngine {
               drawDetails.id = result.id;
               drawDetails.metaAutoFilled = true;
               console.log(`[Sync Engine] Created post for ${cat} on ${normalized.drawDate} with ID: ${result.id}`);
-              bustSitemapCache();
+              await this.bustSitemapCache();
 
               // Check before prize breakdown generation (DB write)
               if (aborted()) {
@@ -174,7 +194,7 @@ export class IngestionSyncEngine {
 
               // Auto-generate the static prize-tier skeleton for the new draw.
               // Best-effort: never throws, so a failure cannot undo the post save.
-              const prizeReport = await autoGeneratePrizeBreakdowns({
+              const prizeReport = await this.autoGeneratePrizeBreakdowns({
                 postId: result.id,
                 category: cat,
                 post: {
@@ -183,7 +203,7 @@ export class IngestionSyncEngine {
                 }
               });
               // Trigger live subscriber notifications (fire-and-forget, best-effort)
-              triggerLiveSubscriberNotifications({
+              await this.triggerLiveSubscriberNotifications({
                 category: cat,
                 date: normalized.drawDate,
                 title,
@@ -239,7 +259,7 @@ export class IngestionSyncEngine {
                   const updatedPostData = {
                     title: existing.title,
                     category: existing.category,
-                    status: existing.status,
+                                         status: existing.status === 'draft' && (isIncomingMiddayNew || isIncomingEveningNew) ? 'published' : existing.status,
                     created_at: normalized.drawDate, // maps to created_at in model updatePost
                     content: existing.content,
                     meta_title: existing.meta_title,
@@ -248,9 +268,9 @@ export class IngestionSyncEngine {
                     evening_winnings: isIncomingEveningNew ? normalized.eveningWinningNumbers : existing.evening_winnings
                   };
 
-                  await updatePost(existing.id, updatedPostData);
+                  await this.updatePost(existing.id, updatedPostData);
                   console.log(`[Sync Engine] Merged/Updated post for ${cat} on ${normalized.drawDate} (ID: ${existing.id})`);
-                  bustSitemapCache();
+                  await this.bustSitemapCache();
                 }
                 report.updated++;
                 drawDetails.status = "updated_merged";
@@ -282,7 +302,7 @@ export class IngestionSyncEngine {
     } else {
       // Persist sync log (both success and failure)
       try {
-        const logId = await createSyncLog(report, runId);
+        const logId = await this.createSyncLog(report, runId);
         report.logId = logId;
       } catch (logErr) {
         console.error('[Sync Engine] Failed to persist sync log:', logErr);

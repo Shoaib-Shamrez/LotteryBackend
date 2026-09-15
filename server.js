@@ -27,8 +27,8 @@ import siteRoutes from "./routes/siteRoutes.js";
 
 import syncRoutes from "./routes/syncRoutes.js";
 import adminSyncRoutes from "./routes/adminSyncRoutes.js";
+import scheduleSync from "./routes/scheduleSync.js";
 import { setSchedulerController } from "./utils/schedulerStatus.js";
-
 dotenv.config();
 const app = express();
 
@@ -100,6 +100,7 @@ app.use("/api/seo", seoRoutes);
 app.use("/api/subscriber", subscriptionRoutes);
 app.use("/api/winners", winnerRoutes);
 app.use("/api/sitemaps", SitemapRoute);
+app.use("/api/sync/schedule", scheduleSync);
 app.use("/api/sync", syncRoutes);
 app.use("/api/admin/sync", adminSyncRoutes);
 

@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node utils/ingestion/testSync.js",
+    "test": "node utils/ingestion/testSync.js && node tests/schedule.test.js && node tests/draftPromotion.test.js && node tests/adminDraftProtection.test.js && node tests/dateMismatch.test.js && node tests/timeoutRetry.test.js",
     "lint": "echo \"Lint passed\"",
     "start": "node server.js",
     "dev": "nodemon server.js"
